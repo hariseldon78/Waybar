@@ -144,6 +144,11 @@ This setting is ignored if *workspace-taskbar.enable* is set to true.
 	If set to special-centered, workspaces will sort by default with special workspaces in the center.
 	If none of those, workspaces will sort with default behavior.
 
+*collapse-inactive-projects*: ++
+	typeof: bool ++
+	default: false ++
+	If enabled, workspaces from inactive projects will be collapsed into a single representative button showing [.prefix]. Workspaces must follow the naming pattern: .{prefix}{num}{monitor} (e.g., .prj0+, .dev1-, .web2|). Projects are identified by the letter prefix before the first digit. For example, .prj0+ and .prj1+ belong to project ".prj", while .dev0+ belongs to project ".dev". When a workspace from a project is active, all workspaces in that project are shown expanded. Inactive projects with multiple workspaces are shown as [.prefix]. Single workspaces are never collapsed.
+
 *expand*: ++
 	typeof: bool ++
 	default: false ++

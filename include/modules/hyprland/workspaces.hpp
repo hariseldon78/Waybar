@@ -72,6 +72,10 @@ class Workspaces : public AModule, public EventHandler {
   void sortWorkspaces();
   void createWorkspace(Json::Value const& workspace_data,
                        Json::Value const& clients_data = Json::Value::nullRef);
+  
+  // Project collapsing
+  std::optional<std::string> extractProjectPrefix(const std::string& workspaceName);
+  void applyProjectCollapsing();
 
   static Json::Value createMonitorWorkspaceData(std::string const& name,
                                                 std::string const& monitor);
@@ -145,6 +149,7 @@ class Workspaces : public AModule, public EventHandler {
   bool m_specialVisibleOnly = false;
   bool m_persistentOnly = false;
   bool m_moveToMonitor = false;
+  bool m_collapseInactiveProjects = true;  // Default to true for testing
   Json::Value m_persistentWorkspaceConfig;
 
   // Map for windows stored in workspaces not present in the current bar.
@@ -200,6 +205,9 @@ class Workspaces : public AModule, public EventHandler {
 
   std::vector<std::regex> m_ignoreWorkspaces;
   std::vector<std::regex> m_ignoreWindows;
+  
+  // Project collapsing state
+  std::vector<std::unique_ptr<Gtk::Button>> m_collapsedButtons;
 
   std::mutex m_mutex;
   const Bar& m_bar;
