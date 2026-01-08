@@ -153,6 +153,7 @@ class Workspaces : public AModule, public EventHandler {
   bool m_persistentOnly = false;
   bool m_moveToMonitor = false;
   bool m_collapseInactiveProjects = false;
+  bool m_transformWorkspaceNames = false;
   Json::Value m_persistentWorkspaceConfig;
 
   // Map for windows stored in workspaces not present in the current bar.

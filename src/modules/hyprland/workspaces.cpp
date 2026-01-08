@@ -640,6 +640,7 @@ auto Workspaces::parseConfig(const Json::Value &config) -> void {
   populateBoolConfig(config, "active-only", m_activeOnly);
   populateBoolConfig(config, "move-to-monitor", m_moveToMonitor);
   populateBoolConfig(config, "collapse-inactive-projects", m_collapseInactiveProjects);
+  populateBoolConfig(config, "transform-workspace-names", m_transformWorkspaceNames);
 
   m_persistentWorkspaceConfig = config.get("persistent-workspaces", Json::Value());
   populateSortByConfig(config);
@@ -1196,12 +1197,13 @@ std::unique_ptr<Gtk::Button> Workspaces::createLabelButton(const std::string& te
 }
 
 void Workspaces::applyProjectCollapsing() {
-  if (!m_collapseInactiveProjects) {
-    spdlog::debug("Workspace project collapsing disabled");
+  // Check if any feature is enabled
+  if (!m_collapseInactiveProjects && !m_transformWorkspaceNames) {
+    spdlog::debug("Workspace project features disabled");
     return;
   }
 
-  spdlog::debug("Workspace project collapsing: processing {} workspaces", m_workspaces.size());
+  spdlog::debug("Workspace project collapsing/transform: processing {} workspaces", m_workspaces.size());
 
   // Group workspaces by project prefix
   struct ProjectGroup {
@@ -1235,7 +1237,7 @@ void Workspaces::applyProjectCollapsing() {
     }
   }
 
-  spdlog::debug("Workspace project collapsing: found {} project groups", groups.size());
+  spdlog::debug("Workspace project features: found {} project groups", groups.size());
 
   // Clear old buttons
   for (auto& btn : m_collapsedButtons) {
@@ -1248,66 +1250,19 @@ void Workspaces::applyProjectCollapsing() {
   }
   m_labelButtons.clear();
 
-  // Apply collapsing logic with enhanced display
+  // Apply collapsing/transform logic
   for (auto& [prefix, group] : groups) {
     spdlog::debug("Workspace group '{}': {} workspaces, active={}, firstPos={}", 
                   prefix, group.workspaces.size(), group.hasActive, group.firstPosition);
     
     std::string cleanPrefix = prefix.substr(1);  // Remove leading dot
     
-    if (group.workspaces.size() == 1) {
-      // Single workspace: show as just prefix name (no number, no brackets)
-      spdlog::debug("Workspace group '{}' -> single workspace, display as '{}'", prefix, cleanPrefix);
-      auto* ws = group.workspaces[0];
-      
-      // Set display name to just the prefix
-      auto& button = ws->button();
-      button.set_label(cleanPrefix);
-      button.show();
-      
-    } else if (group.hasActive) {
-      // Multiple active: show as [prefix num num num]
-      spdlog::debug("Workspace group '{}' -> expanded as [{}...]", prefix, cleanPrefix);
-      
-      int pos = group.firstPosition;
-      
-      // Add opening bracket
-      auto openBracket = createLabelButton("[");
-      m_box.add(*openBracket);
-      m_box.reorder_child(*openBracket, pos++);
-      openBracket->show();
-      m_labelButtons.push_back(std::move(openBracket));
-      
-      // Add project name
-      auto projectLabel = createLabelButton(cleanPrefix);
-      m_box.add(*projectLabel);
-      m_box.reorder_child(*projectLabel, pos++);
-      projectLabel->show();
-      m_labelButtons.push_back(std::move(projectLabel));
-      
-      // Add workspaces (just numbers)
-      for (auto* ws : group.workspaces) {
-        std::string number = extractNumber(ws->name());
-        if (number.empty()) {
-          number = "?";
-        }
-        
-        auto& button = ws->button();
-        button.set_label(number);
-        button.get_style_context()->add_class("grouped");  // For CSS spacing
-        button.show();
-        m_box.reorder_child(button, pos++);
-      }
-      
-      // Add closing bracket
-      auto closeBracket = createLabelButton("]");
-      m_box.add(*closeBracket);
-      m_box.reorder_child(*closeBracket, pos);
-      closeBracket->show();
-      m_labelButtons.push_back(std::move(closeBracket));
-      
-    } else {
-      // Multiple inactive: collapse to [prefix]
+    // Decide what to do based on enabled features
+    bool shouldCollapse = m_collapseInactiveProjects && !group.hasActive && group.workspaces.size() > 1;
+    bool shouldTransform = m_transformWorkspaceNames;
+    
+    if (shouldCollapse) {
+      // Collapse: hide individual workspaces, show [prefix]
       spdlog::debug("Workspace group '{}' -> collapsing to [{}]", prefix, cleanPrefix);
       for (auto* ws : group.workspaces) {
         ws->button().hide();
@@ -1337,6 +1292,65 @@ void Workspaces::applyProjectCollapsing() {
       collapsedBtn->show();
       
       m_collapsedButtons.push_back(std::move(collapsedBtn));
+      
+    } else if (shouldTransform) {
+      // Transform names without collapsing
+      if (group.workspaces.size() == 1) {
+        // Single workspace: show as just prefix name (no number, no brackets)
+        spdlog::debug("Workspace group '{}' -> single workspace, display as '{}'", prefix, cleanPrefix);
+        auto* ws = group.workspaces[0];
+        
+        // Set display name to just the prefix
+        auto& button = ws->button();
+        button.set_label(cleanPrefix);
+        button.show();
+        
+      } else {
+        // Multiple workspaces: show as [prefix num num num]
+        spdlog::debug("Workspace group '{}' -> transformed as [{}...]", prefix, cleanPrefix);
+        
+        int pos = group.firstPosition;
+        
+        // Add opening bracket
+        auto openBracket = createLabelButton("[");
+        m_box.add(*openBracket);
+        m_box.reorder_child(*openBracket, pos++);
+        openBracket->show();
+        m_labelButtons.push_back(std::move(openBracket));
+        
+        // Add project name
+        auto projectLabel = createLabelButton(cleanPrefix);
+        m_box.add(*projectLabel);
+        m_box.reorder_child(*projectLabel, pos++);
+        projectLabel->show();
+        m_labelButtons.push_back(std::move(projectLabel));
+        
+        // Add workspaces (just numbers)
+        for (auto* ws : group.workspaces) {
+          std::string number = extractNumber(ws->name());
+          if (number.empty()) {
+            number = "?";
+          }
+          
+          auto& button = ws->button();
+          button.set_label(number);
+          button.get_style_context()->add_class("grouped");  // For CSS spacing
+          button.show();
+          m_box.reorder_child(button, pos++);
+        }
+        
+        // Add closing bracket
+        auto closeBracket = createLabelButton("]");
+        m_box.add(*closeBracket);
+        m_box.reorder_child(*closeBracket, pos);
+        closeBracket->show();
+        m_labelButtons.push_back(std::move(closeBracket));
+      }
+    } else {
+      // No transform, no collapse - just show normally
+      for (auto* ws : group.workspaces) {
+        ws->button().show();
+      }
     }
   }
 }
