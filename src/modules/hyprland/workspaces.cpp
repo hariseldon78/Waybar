@@ -131,6 +131,7 @@ void Workspaces::doUpdate() {
   updateWorkspaceStates();
   updateWindowCount();
   sortWorkspaces();
+  applyProjectCollapsing();
 
   bool anyWindowCreated = updateWindowsToCreate();
 
@@ -631,6 +632,7 @@ auto Workspaces::parseConfig(const Json::Value &config) -> void {
   populateBoolConfig(config, "persistent-only", m_persistentOnly);
   populateBoolConfig(config, "active-only", m_activeOnly);
   populateBoolConfig(config, "move-to-monitor", m_moveToMonitor);
+  populateBoolConfig(config, "collapse-inactive-projects", m_collapseInactiveProjects);
 
   m_persistentWorkspaceConfig = config.get("persistent-workspaces", Json::Value());
   populateSortByConfig(config);
@@ -1143,6 +1145,97 @@ std::optional<int> Workspaces::parseWorkspaceId(std::string const &workspaceIdSt
   } catch (std::exception const &e) {
     spdlog::debug("Workspace \"{}\" is not bound to an id: {}", workspaceIdStr, e.what());
     return std::nullopt;
+  }
+}
+
+std::optional<std::string> Workspaces::extractProjectPrefix(const std::string& workspaceName) {
+  static std::regex pattern(R"(^\.([a-zA-Z]+)[0-9])");
+  std::smatch match;
+  if (std::regex_search(workspaceName, match, pattern)) {
+    return "." + match[1].str();
+  }
+  return std::nullopt;
+}
+
+void Workspaces::applyProjectCollapsing() {
+  if (!m_collapseInactiveProjects) {
+    spdlog::debug("Workspace project collapsing disabled");
+    return;
+  }
+
+  spdlog::debug("Workspace project collapsing: processing {} workspaces", m_workspaces.size());
+
+  // Group workspaces by project prefix
+  struct ProjectGroup {
+    std::string prefix;
+    std::vector<Workspace*> workspaces;
+    bool hasActive = false;
+    int firstPosition = -1;
+  };
+  
+  std::map<std::string, ProjectGroup> groups;
+  
+  for (size_t i = 0; i < m_workspaces.size(); ++i) {
+    auto& workspace = m_workspaces[i];
+    auto prefix = extractProjectPrefix(workspace->name());
+    
+    spdlog::trace("Workspace '{}' -> prefix: {}", workspace->name(), 
+                  prefix ? *prefix : "none");
+    
+    if (prefix) {
+      auto& group = groups[*prefix];
+      group.prefix = *prefix;
+      group.workspaces.push_back(workspace.get());
+      
+      if (workspace->isActive()) {
+        group.hasActive = true;
+      }
+      
+      if (group.firstPosition == -1) {
+        group.firstPosition = i;
+      }
+    }
+  }
+
+  spdlog::debug("Workspace project collapsing: found {} project groups", groups.size());
+
+  // Clear old collapsed buttons
+  for (auto& btn : m_collapsedButtons) {
+    m_box.remove(*btn);
+  }
+  m_collapsedButtons.clear();
+
+  // Apply collapsing logic
+  for (auto& [prefix, group] : groups) {
+    spdlog::debug("Workspace group '{}': {} workspaces, active={}, firstPos={}", 
+                  prefix, group.workspaces.size(), group.hasActive, group.firstPosition);
+                  
+    if (group.hasActive || group.workspaces.size() == 1) {
+      // Show all workspaces normally
+      spdlog::debug("Workspace group '{}' -> showing all workspaces (active or single)", prefix);
+      for (auto* ws : group.workspaces) {
+        ws->button().show();
+      }
+    } else {
+      // Collapse: hide individual workspaces, show [.prefix]
+      spdlog::debug("Workspace group '{}' -> collapsing to [{}]", prefix, prefix);
+      for (auto* ws : group.workspaces) {
+        ws->button().hide();
+      }
+      
+      // Create collapsed button
+      auto collapsedBtn = std::make_unique<Gtk::Button>();
+      collapsedBtn->set_relief(Gtk::RELIEF_NONE);
+      collapsedBtn->set_label("[" + prefix + "]");
+      collapsedBtn->get_style_context()->add_class("collapsed-project");
+      collapsedBtn->get_style_context()->add_class(MODULE_CLASS);
+      
+      m_box.add(*collapsedBtn);
+      m_box.reorder_child(*collapsedBtn, group.firstPosition);
+      collapsedBtn->show();
+      
+      m_collapsedButtons.push_back(std::move(collapsedBtn));
+    }
   }
 }
 
