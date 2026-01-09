@@ -1251,10 +1251,10 @@ void Workspaces::applyProjectCollapsing() {
   m_labelButtons.clear();
 
   // Apply collapsing/transform logic
+  // Track position offset as groups add elements
+  int positionOffset = 0;
+  
   for (auto& [prefix, group] : groups) {
-    spdlog::debug("Workspace group '{}': {} workspaces, active={}, firstPos={}", 
-                  prefix, group.workspaces.size(), group.hasActive, group.firstPosition);
-    
     std::string cleanPrefix = prefix.substr(1);  // Remove leading dot
     
     // Decide what to do based on enabled features
@@ -1264,12 +1264,17 @@ void Workspaces::applyProjectCollapsing() {
     // Choose display name based on transform flag
     std::string displayPrefix = shouldTransform ? cleanPrefix : prefix;
     
+    // Track elements added by this group
+    int elementsAdded = 0;
+    
     if (shouldCollapse) {
       // Collapse: hide individual workspaces, show [prefix]
       spdlog::debug("Workspace group '{}' -> collapsing to [{}]", prefix, displayPrefix);
       for (auto* ws : group.workspaces) {
         ws->button().hide();
       }
+      
+      spdlog::debug("WSDBG: Before adding collapsed button: m_box has {} children", m_box.get_children().size());
       
       // Create collapsed button with click handler
       auto collapsedBtn = std::make_unique<Gtk::Button>();
@@ -1290,11 +1295,17 @@ void Workspaces::applyProjectCollapsing() {
         }
       });
       
+      // Calculate adjusted position accounting for elements added by earlier groups
+      int targetPosition = group.firstPosition + positionOffset;
+      
       m_box.add(*collapsedBtn);
-      m_box.reorder_child(*collapsedBtn, group.firstPosition);
+      m_box.reorder_child(*collapsedBtn, targetPosition);
       collapsedBtn->show();
       
       m_collapsedButtons.push_back(std::move(collapsedBtn));
+      
+      // Collapsed group adds 1 button (workspaces are hidden)
+      elementsAdded = 1;
       
     } else if (shouldTransform) {
       // Transform names without collapsing
@@ -1308,11 +1319,15 @@ void Workspaces::applyProjectCollapsing() {
         button.set_label(cleanPrefix);
         button.show();
         
+        // Single workspace adds 0 extra elements (workspace already exists)
+        elementsAdded = 0;
+        
       } else {
         // Multiple workspaces: show as [prefix num num num]
         spdlog::debug("Workspace group '{}' -> transformed as [{}...]", prefix, cleanPrefix);
         
-        int pos = group.firstPosition;
+        // Calculate adjusted position
+        int pos = group.firstPosition + positionOffset;
         
         // Add opening bracket
         auto openBracket = createLabelButton("[");
@@ -1348,13 +1363,21 @@ void Workspaces::applyProjectCollapsing() {
         m_box.reorder_child(*closeBracket, pos);
         closeBracket->show();
         m_labelButtons.push_back(std::move(closeBracket));
+        
+        // Transformed group adds: bracket + label + bracket = 3 elements
+        // (workspaces already exist, just reordered)
+        elementsAdded = 3;
       }
     } else {
       // No transform, no collapse - just show normally
       for (auto* ws : group.workspaces) {
         ws->button().show();
       }
+      elementsAdded = 0;
     }
+    
+    // Update position offset for next group
+    positionOffset += elementsAdded;
   }
 }
 
