@@ -372,11 +372,23 @@ void Workspaces::onWorkspaceActivated(std::string const &payload) {
     // Track last active workspace per group for collapsed button behavior
     auto prefix = extractProjectPrefix(workspaceName);
     if (prefix) {
-      // Build compound key: {prefix}@{monitor}
-      std::string monitor = getBarOutput();
-      std::string key = *prefix + "@" + monitor;
-      m_lastActivePerGroup[key] = workspaceName;
-      spdlog::trace("Tracked last active workspace: {} for key {}", workspaceName, key);
+      // Find the workspace object to get its actual monitor
+      auto workspaceIt = std::find_if(m_workspaces.begin(), m_workspaces.end(),
+                                       [&workspaceName](const auto& ws) {
+                                         return ws->name() == workspaceName;
+                                       });
+      
+      if (workspaceIt != m_workspaces.end()) {
+        // Only track history if workspace is on this bar's monitor
+        std::string workspaceMonitor = (*workspaceIt)->output();
+        std::string barMonitor = getBarOutput();
+        
+        if (workspaceMonitor == barMonitor) {
+          std::string key = *prefix + "@" + barMonitor;
+          m_lastActivePerGroup[key] = workspaceName;
+          spdlog::trace("Tracked last active workspace: {} for key {}", workspaceName, key);
+        }
+      }
     }
   }
 }
@@ -1226,6 +1238,9 @@ void Workspaces::applyProjectCollapsing() {
   
   std::map<std::string, ProjectGroup> groups;
   
+  // Get current bar's monitor for filtering
+  std::string currentMonitor = getBarOutput();
+  
   for (size_t i = 0; i < m_workspaces.size(); ++i) {
     auto& workspace = m_workspaces[i];
     auto prefix = extractProjectPrefix(workspace->name());
@@ -1233,7 +1248,8 @@ void Workspaces::applyProjectCollapsing() {
     spdlog::trace("Workspace '{}' -> prefix: {}", workspace->name(), 
                   prefix ? *prefix : "none");
     
-    if (prefix) {
+    // Only include workspaces from current monitor in groups
+    if (prefix && workspace->output() == currentMonitor) {
       auto& group = groups[*prefix];
       group.prefix = *prefix;
       group.workspaces.push_back(workspace.get());
