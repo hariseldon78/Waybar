@@ -676,14 +676,20 @@ auto Workspaces::parseConfig(const Json::Value &config) -> void {
     } else if (value == "all") {
       m_showWindowIcons = ShowWindowIcons::ALL;
     } else {
-      spdlog::warn("Invalid show-window-icons value '{}', using default 'current-group'", value);
+      spdlog::warn("[WICONS] Invalid show-window-icons value '{}', using default 'current-group'", value);
       m_showWindowIcons = ShowWindowIcons::CURRENT_GROUP;
     }
+    spdlog::info("[WICONS] Window icons config: show-window-icons='{}' (mode={})", value, static_cast<int>(m_showWindowIcons));
+  } else {
+    spdlog::info("[WICONS] Window icons config: show-window-icons not set, using default 'current-group' (mode={})", static_cast<int>(m_showWindowIcons));
   }
 
   // Parse icon-size config
   if (config["icon-size"].isInt()) {
     m_windowIconSize = config["icon-size"].asInt();
+    spdlog::info("[WICONS] Window icons config: icon-size={}", m_windowIconSize);
+  } else {
+    spdlog::info("[WICONS] Window icons config: icon-size not set, using default {}", m_windowIconSize);
   }
 
   m_persistentWorkspaceConfig = config.get("persistent-workspaces", Json::Value());

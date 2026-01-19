@@ -357,6 +357,12 @@ std::string &Workspace::selectIcon(std::map<std::string, std::string> &icons_map
 }
 
 void Workspace::update(const std::string &workspace_icon) {
+  static bool first_call = true;
+  if (first_call) {
+    spdlog::info("[WICONS] First workspace update call - workspace icons feature active");
+    first_call = false;
+  }
+  
   if (this->m_workspaceManager.persistentOnly() && !this->isPersistent()) {
     m_button.hide();
     return;
@@ -428,7 +434,7 @@ void Workspace::updateWindowIcons() {
   m_iconBox.hide();
 
   auto showMode = m_workspaceManager.showWindowIcons();
-  spdlog::debug("updateWindowIcons: workspace '{}' (id {}), showMode={}, isActive={}, windowCount={}", 
+  spdlog::debug("[WICONS] updateWindowIcons: workspace '{}' (id {}), showMode={}, isActive={}, windowCount={}", 
                 m_name, m_id, static_cast<int>(showMode), isActive(), m_windowMap.size());
   
   if (showMode == Workspaces::ShowWindowIcons::NONE) {
@@ -437,7 +443,7 @@ void Workspace::updateWindowIcons() {
 
   // TODO: Implement current-group logic (for now, treat as ALL for active workspace)
   if (showMode == Workspaces::ShowWindowIcons::CURRENT_GROUP && !isActive()) {
-    spdlog::debug("Skipping icons for inactive workspace in CURRENT_GROUP mode");
+    spdlog::debug("[WICONS] Skipping icons for inactive workspace in CURRENT_GROUP mode");
     return;
   }
 
@@ -448,7 +454,7 @@ void Workspace::updateWindowIcons() {
   std::vector<std::string> icon_names_ordered;
   
   for (const auto& window : m_windowMap) {
-    spdlog::debug("  Window: class='{}', title='{}', skip={}", 
+    spdlog::debug("[WICONS]   Window: class='{}', title='{}', skip={}", 
                   window.window_class, window.window_title, shouldSkipWindow(window));
     
     if (shouldSkipWindow(window)) {
@@ -458,17 +464,17 @@ void Workspace::updateWindowIcons() {
     auto icon_name_opt = getIconName(window.window_class, "");
     if (icon_name_opt.has_value()) {
       std::string icon_name = icon_name_opt.value();
-      spdlog::debug("    Found icon: '{}'", icon_name);
+      spdlog::debug("[WICONS]     Found icon: '{}'", icon_name);
       if (unique_icons.find(icon_name) == unique_icons.end()) {
         unique_icons.insert(icon_name);
         icon_names_ordered.push_back(icon_name);
       }
     } else {
-      spdlog::debug("    No icon found for class '{}'", window.window_class);
+      spdlog::debug("[WICONS]     No icon found for class '{}'", window.window_class);
     }
   }
 
-  spdlog::debug("Total unique icons to render: {}", icon_names_ordered.size());
+  spdlog::debug("[WICONS] Total unique icons to render: {}", icon_names_ordered.size());
 
   // Create and add icon images
   for (const auto& icon_name : icon_names_ordered) {
@@ -480,16 +486,16 @@ void Workspace::updateWindowIcons() {
       try {
         auto pixbuf = Gdk::Pixbuf::create_from_file(icon_name, icon_size, icon_size);
         img->set(pixbuf);
-        spdlog::debug("Loaded icon from file: {}", icon_name);
+        spdlog::debug("[WICONS] Loaded icon from file: {}", icon_name);
       } catch (const Glib::Error& e) {
-        spdlog::warn("Failed to load icon from file {}: {}", icon_name, e.what().c_str());
+        spdlog::warn("[WICONS] Failed to load icon from file {}: {}", icon_name, e.what().c_str());
         delete img;
         continue;
       }
     } else {
       // Icon name - load from theme
       img->set_from_icon_name(icon_name, Gtk::ICON_SIZE_INVALID);
-      spdlog::debug("Loaded icon from theme: {}", icon_name);
+      spdlog::debug("[WICONS] Loaded icon from theme: {}", icon_name);
     }
     
     img->show();
@@ -498,10 +504,10 @@ void Workspace::updateWindowIcons() {
   }
 
   if (!m_iconImages.empty()) {
-    spdlog::debug("Showing icon box with {} icons", m_iconImages.size());
+    spdlog::debug("[WICONS] Showing icon box with {} icons", m_iconImages.size());
     m_iconBox.show();
   } else {
-    spdlog::debug("No icons to show");
+    spdlog::debug("[WICONS] No icons to show");
   }
 }
 
