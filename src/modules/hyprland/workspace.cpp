@@ -526,6 +526,16 @@ void Workspace::setLabelText(const std::string& text) {
   m_labelBefore.set_markup(text);
 }
 
+std::vector<std::string> Workspace::getWindowClasses() const {
+  std::vector<std::string> classes;
+  for (const auto& window : m_windowMap) {
+    if (!shouldSkipWindow(window) && !window.window_class.empty()) {
+      classes.push_back(window.window_class);
+    }
+  }
+  return classes;
+}
+
 void Workspace::updateTaskbar(const std::string &workspace_icon) {
   for (auto child : m_content.get_children()) {
     if (child != &m_labelBefore) {

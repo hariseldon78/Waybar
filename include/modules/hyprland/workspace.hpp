@@ -66,6 +66,7 @@ class Workspace {
 
   void update(const std::string& workspace_icon);
   void setLabelText(const std::string& text);
+  std::vector<std::string> getWindowClasses() const;
 
  private:
   Workspaces& m_workspaceManager;

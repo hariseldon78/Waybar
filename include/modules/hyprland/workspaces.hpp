@@ -101,6 +101,10 @@ class Workspaces : public AModule, public EventHandler {
   auto populateWorkspaceTaskbarConfig(const Json::Value& config) -> void;
 
   void registerIpc();
+  
+  // Helper methods for icon handling
+  std::vector<std::string> getWorkspaceWindowClasses(Workspace* ws);
+  std::optional<std::string> getIconNameForClass(const std::string& windowClass);
 
   // workspace events
   void onWorkspaceActivated(std::string const& payload);

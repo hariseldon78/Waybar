@@ -8,10 +8,17 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <filesystem>
+
+#include <gdkmm/pixbuf.h>
+#include <glibmm/fileutils.h>
+#include <glibmm/keyfile.h>
+#include <glibmm/miscutils.h>
 
 #include "util/command.hpp"
 #include "util/regex_collection.hpp"
 #include "util/string.hpp"
+#include "util/gtk_icon.hpp"
 
 namespace waybar::modules::hyprland {
 
@@ -1252,6 +1259,68 @@ std::string Workspaces::extractNumber(const std::string& workspaceName) {
   return "";
 }
 
+std::vector<std::string> Workspaces::getWorkspaceWindowClasses(Workspace* ws) {
+  return ws->getWindowClasses();
+}
+
+std::optional<std::string> Workspaces::getIconNameForClass(const std::string& windowClass) {
+  // Reuse the icon lookup logic from workspace.cpp
+  // For now, we'll include the helper functions directly
+  
+  auto data_dirs = Glib::get_system_data_dirs();
+  data_dirs.insert(data_dirs.begin(), Glib::get_user_data_dir());
+  
+  // Helper to find desktop file
+  auto getDesktopFile = [&](const std::string& appId) -> std::optional<std::string> {
+    for (const auto& data_dir : data_dirs) {
+      const auto data_app_dir = data_dir + "/applications/";
+      if (!std::filesystem::exists(data_app_dir)) continue;
+      
+      for (const auto& entry : std::filesystem::recursive_directory_iterator(data_app_dir)) {
+        if (entry.is_regular_file()) {
+          std::string filename = entry.path().filename().string();
+          std::string suffix = appId + ".desktop";
+          
+          if (filename.size() >= suffix.size()) {
+            std::string lowerFilename = filename;
+            std::string lowerSuffix = suffix;
+            std::transform(lowerFilename.begin(), lowerFilename.end(), lowerFilename.begin(), ::tolower);
+            std::transform(lowerSuffix.begin(), lowerSuffix.end(), lowerSuffix.begin(), ::tolower);
+            
+            if (lowerFilename.compare(lowerFilename.size() - lowerSuffix.size(), lowerSuffix.size(), lowerSuffix) == 0) {
+              return entry.path().string();
+            }
+          }
+        }
+      }
+    }
+    return std::nullopt;
+  };
+  
+  auto desktopFile = getDesktopFile(windowClass);
+  if (desktopFile.has_value()) {
+    try {
+      Glib::KeyFile keyfile;
+      keyfile.load_from_file(desktopFile.value());
+      return keyfile.get_string("Desktop Entry", "Icon");
+    } catch (...) {
+      // Fall through to heuristics
+    }
+  }
+  
+  // Try heuristics
+  if (DefaultGtkIconThemeWrapper::has_icon(windowClass)) {
+    return windowClass;
+  }
+  
+  auto desktopSuffix = windowClass + "-desktop";
+  if (DefaultGtkIconThemeWrapper::has_icon(desktopSuffix)) {
+    return desktopSuffix;
+  }
+  
+  return std::nullopt;
+}
+
 int Workspaces::countWorkspacesInProject(const std::string& prefix) {
   int count = 0;
   for (const auto& ws : m_workspaces) {
@@ -1371,7 +1440,7 @@ void Workspaces::applyProjectCollapsing() {
     int elementsAdded = 0;
     
     if (shouldCollapse) {
-      // Collapse: hide individual workspaces, show [prefix]
+      // Collapse: hide individual workspaces, show [prefix] with icons
       spdlog::debug("Workspace group '{}' -> collapsing to [{}]", prefix, displayPrefix);
       for (auto* ws : group.workspaces) {
         ws->button().hide();
@@ -1379,12 +1448,69 @@ void Workspaces::applyProjectCollapsing() {
       
       spdlog::debug("WSDBG: Before adding collapsed button: m_box has {} children", m_box.get_children().size());
       
-      // Create collapsed button with click handler
+      // Create collapsed button with content box for label + icons
       auto collapsedBtn = std::make_unique<Gtk::Button>();
       collapsedBtn->set_relief(Gtk::RELIEF_NONE);
-      collapsedBtn->set_label("[" + displayPrefix + "]");
       collapsedBtn->get_style_context()->add_class("collapsed-project");
       collapsedBtn->get_style_context()->add_class(MODULE_CLASS);
+      
+      // Create content: [prefix] + icons
+      auto* contentBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2));
+      auto* label = Gtk::manage(new Gtk::Label("[" + displayPrefix + "]"));
+      contentBox->pack_start(*label, false, false);
+      label->show();
+      
+      // Collect and deduplicate icons from all workspaces in this group
+      if (m_showWindowIcons == ShowWindowIcons::ALL) {
+        std::set<std::string> uniqueIconNames;
+        std::vector<std::string> iconNamesOrdered;
+        
+        for (auto* ws : group.workspaces) {
+          // Access the workspace's window map to get icons
+          // We need to iterate through windows and collect their icons
+          // For now, we'll call a helper method on the workspace
+          auto windowClasses = getWorkspaceWindowClasses(ws);
+          for (const auto& windowClass : windowClasses) {
+            // Reuse the icon lookup logic
+            auto iconNameOpt = getIconNameForClass(windowClass);
+            if (iconNameOpt.has_value()) {
+              std::string iconName = iconNameOpt.value();
+              if (uniqueIconNames.find(iconName) == uniqueIconNames.end()) {
+                uniqueIconNames.insert(iconName);
+                iconNamesOrdered.push_back(iconName);
+              }
+            }
+          }
+        }
+        
+        // Add icons to the button
+        for (const auto& iconName : iconNamesOrdered) {
+          auto* icon = Gtk::manage(new Gtk::Image());
+          icon->set_pixel_size(m_windowIconSize);
+          
+          if (iconName.front() == '/') {
+            // File path
+            try {
+              auto pixbuf = Gdk::Pixbuf::create_from_file(iconName, m_windowIconSize, m_windowIconSize);
+              icon->set(pixbuf);
+            } catch (const Glib::Error& e) {
+              spdlog::warn("[WICONS] Failed to load icon from file {}: {}", iconName, e.what().c_str());
+              continue;
+            }
+          } else {
+            // Icon name from theme
+            icon->set_from_icon_name(iconName, Gtk::ICON_SIZE_INVALID);
+          }
+          
+          icon->show();
+          contentBox->pack_start(*icon, false, false);
+        }
+        
+        spdlog::debug("[WICONS] Collapsed group '{}' showing {} deduplicated icons", prefix, iconNamesOrdered.size());
+      }
+      
+      contentBox->show();
+      collapsedBtn->add(*contentBox);
       
       // Apply empty class if group has no windows
       if (!group.hasWindows) {
