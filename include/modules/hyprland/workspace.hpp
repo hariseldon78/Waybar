@@ -65,6 +65,7 @@ class Workspace {
   std::optional<WindowRepr> closeWindow(WindowAddress const& addr);
 
   void update(const std::string& workspace_icon);
+  void setLabelText(const std::string& text);
 
  private:
   Workspaces& m_workspaceManager;

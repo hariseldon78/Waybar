@@ -1439,10 +1439,9 @@ void Workspaces::applyProjectCollapsing() {
         spdlog::debug("Workspace group '{}' -> single workspace, display as '{}'", prefix, cleanPrefix);
         auto* ws = group.workspaces[0];
         
-        // Set display name to just the prefix
-        auto& button = ws->button();
-        button.set_label(cleanPrefix);
-        button.show();
+        // Set display name to just the prefix - use setLabelText to preserve icons
+        ws->setLabelText(cleanPrefix);
+        ws->button().show();
         
         // Single workspace adds 0 extra elements (workspace already exists)
         elementsAdded = 0;
@@ -1501,15 +1500,11 @@ void Workspaces::applyProjectCollapsing() {
             number = "?";
           }
           
-          auto& button = ws->button();
-          // DON'T use button.set_label() - it destroys m_content and icons!
-          // Instead update the label inside the button
-          // button.set_label(number);
-          spdlog::debug("[WICONS] TODO: Update workspace {} label to show '{}'", ws->name(), number);
-          
-          button.get_style_context()->add_class("grouped");  // For CSS spacing
-          button.show();
-          m_box.reorder_child(button, pos++);
+          // Use setLabelText to update label without destroying icon boxes
+          ws->setLabelText(number);
+          ws->button().get_style_context()->add_class("grouped");  // For CSS spacing
+          ws->button().show();
+          m_box.reorder_child(ws->button(), pos++);
         }
         
         // Add closing bracket

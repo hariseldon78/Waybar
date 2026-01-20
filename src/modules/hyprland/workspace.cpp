@@ -522,6 +522,10 @@ bool Workspace::isEmpty() const {
       [this, &ignore_list](const auto &window_repr) { return shouldSkipWindow(window_repr); });
 }
 
+void Workspace::setLabelText(const std::string& text) {
+  m_labelBefore.set_markup(text);
+}
+
 void Workspace::updateTaskbar(const std::string &workspace_icon) {
   for (auto child : m_content.get_children()) {
     if (child != &m_labelBefore) {
