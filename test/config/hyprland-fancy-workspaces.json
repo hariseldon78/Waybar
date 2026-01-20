@@ -6,7 +6,7 @@
       "HDMI-0",
       "DP-0"
     ],
-    "hyprland/workspaces": {
+    "hyprland/fancy-workspaces": {
       "active-only": true,
       "all-outputs": false,
       "show-special": true,

@@ -216,7 +216,7 @@ waybar::AModule* waybar::Factory::makeModule(const std::string& name,
     if (ref == "hyprland/submap") {
       return new waybar::modules::hyprland::Submap(id, bar_, config_[name]);
     }
-    if (ref == "hyprland/workspaces") {
+    if (ref == "hyprland/fancy-workspaces") {
       return new waybar::modules::hyprland::Workspaces(id, bar_, config_[name]);
     }
 #endif

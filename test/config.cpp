@@ -145,15 +145,15 @@ TEST_CASE("Load multiple bar config with include", "[config]") {
   REQUIRE(data[0]["output"].asString() == "OUT-0");
 }
 
-TEST_CASE("Load Hyprland Workspaces bar config", "[config]") {
+TEST_CASE("Load Hyprland Fancy Workspaces bar config", "[config]") {
   waybar::Config conf;
-  conf.load("test/config/hyprland-workspaces.json");
+  conf.load("test/config/hyprland-fancy-workspaces.json");
 
   auto& data = conf.getConfig();
-  auto hyprland = data[0]["hyprland/workspaces"];
-  auto hyprland_window_rewrite = data[0]["hyprland/workspaces"]["window-rewrite"];
-  auto hyprland_format_icons = data[0]["hyprland/workspaces"]["format-icons"];
-  auto hyprland_persistent_workspaces = data[0]["hyprland/workspaces"]["persistent-workspaces"];
+  auto hyprland = data[0]["hyprland/fancy-workspaces"];
+  auto hyprland_window_rewrite = data[0]["hyprland/fancy-workspaces"]["window-rewrite"];
+  auto hyprland_format_icons = data[0]["hyprland/fancy-workspaces"]["format-icons"];
+  auto hyprland_persistent_workspaces = data[0]["hyprland/fancy-workspaces"]["persistent-workspaces"];
 
   REQUIRE(data.isArray());
   REQUIRE(data.size() == 1);
