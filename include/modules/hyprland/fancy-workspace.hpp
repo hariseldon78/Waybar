@@ -26,9 +26,9 @@ using WindowAddress = std::string;
 namespace waybar::modules::hyprland {
 
 class Workspaces;
-class Workspace {
+class FancyWorkspace {
  public:
-  explicit Workspace(const Json::Value& workspace_data, Workspaces& workspace_manager,
+  explicit FancyWorkspace(const Json::Value& workspace_data, Workspaces& workspace_manager,
                      const Json::Value& clients_data = Json::Value::nullRef);
   std::string& selectIcon(std::map<std::string, std::string>& icons_map);
   Gtk::Button& button() { return m_button; };

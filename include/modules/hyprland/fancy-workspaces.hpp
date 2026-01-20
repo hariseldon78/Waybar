@@ -26,6 +26,7 @@ using WindowAddress = std::string;
 
 namespace waybar::modules::hyprland {
 
+class FancyWorkspace;
 class Workspaces;
 
 class Workspaces : public AModule, public EventHandler {
@@ -77,8 +78,8 @@ class Workspaces : public AModule, public EventHandler {
     std::string windowAddress;
   };
   
-  std::vector<std::string> getWorkspaceWindowClasses(Workspace* ws);
-  std::vector<WindowInfo> getWorkspaceWindows(Workspace* ws);
+  std::vector<std::string> getWorkspaceWindowClasses(FancyWorkspace* ws);
+  std::vector<WindowInfo> getWorkspaceWindows(FancyWorkspace* ws);
   std::optional<std::string> getIconNameForClass(const std::string& windowClass);
   bool isWorkspaceInActiveGroup(const std::string& workspaceName);
 
@@ -199,7 +200,7 @@ class Workspaces : public AModule, public EventHandler {
   uint64_t m_monitorId;
   int m_activeWorkspaceId;
   std::string m_activeSpecialWorkspaceName;
-  std::vector<std::unique_ptr<Workspace>> m_workspaces;
+  std::vector<std::unique_ptr<FancyWorkspace>> m_workspaces;
   std::vector<std::pair<Json::Value, Json::Value>> m_workspacesToCreate;
   std::vector<std::string> m_workspacesToRemove;
   std::vector<WindowCreationPayload> m_windowsToCreate;
