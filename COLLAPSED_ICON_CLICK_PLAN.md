@@ -133,31 +133,77 @@ New approach options:
 
 The only real "benefit" of the large button was visual grouping, which CSS can handle just as well.
 
-### Step 0: Fix Event Handling - Make EventBox Capture Clicks
-The EventBox needs to properly intercept events before they reach the Button:
+## Implementation Steps - REVISED for Sibling Buttons Architecture
 
+### Step 0: Refactor to Sibling Buttons
+Replace the single large Button containing EventBoxes with sibling Buttons.
+
+**Current code (lines 1448-1620):**
 ```cpp
-// Enable event handling on EventBox
-eventBox->add_events(Gdk::BUTTON_PRESS_MASK);
-eventBox->set_visible_window(false);  // Keep transparent
+auto collapsedBtn = std::make_unique<Gtk::Button>();
+auto* contentBox = Gtk::manage(new Gtk::Box(...));
+// Add labels and EventBoxes to contentBox
+collapsedBtn->add(*contentBox);
+collapsedBtn->signal_clicked().connect([...]() { /* switch workspace */ });
+m_box.add(*collapsedBtn);
 ```
 
-Also need to ensure the handler runs in capture phase and actually stops propagation:
+**New code:**
 ```cpp
-eventBox->signal_button_press_event().connect([...](GdkEventButton* event) -> bool {
-  // ... handle click ...
-  return true;  // This should stop propagation but currently doesn't work
-}, false);  // false = run in capture phase, before default handler
+// Create container box for the group (not a button)
+auto* groupBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
+groupBox->get_style_context()->add_class("collapsed-project-group");
+
+// Create label button: [prefix]
+auto labelBtn = std::make_unique<Gtk::Button>();
+labelBtn->set_relief(Gtk::RELIEF_NONE);
+labelBtn->get_style_context()->add_class("collapsed-project-label");
+labelBtn->set_label("[" + displayPrefix + "]");
+
+// Add click handler for label - switches to workspace
+labelBtn->signal_clicked().connect([this, firstWorkspace, groupPrefix]() {
+  // Same logic as before - switch to last active or first workspace
+});
+
+groupBox->pack_start(*labelBtn, false, false);
+
+// Create icon buttons
+for (const auto& iconName : iconNamesOrdered) {
+  auto* iconBtn = Gtk::manage(new Gtk::Button());
+  iconBtn->set_relief(Gtk::RELIEF_NONE);
+  iconBtn->get_style_context()->add_class("collapsed-project-icon");
+  
+  auto* icon = Gtk::manage(new Gtk::Image());
+  icon->set_pixel_size(m_windowIconSize);
+  // Load icon...
+  iconBtn->add(*icon);
+  iconBtn->set_tooltip_text(tooltip);
+  
+  // Add click handler for icon - smart window focus
+  std::vector<std::string> allAddresses = iconToAddresses[iconName];
+  std::map<std::string, std::string> addrToWs = addressToWorkspace;
+  iconBtn->signal_clicked().connect([this, allAddresses, addrToWs, groupPrefix]() {
+    std::string targetAddress = selectBestWindowForIcon(
+      allAddresses, addrToWs, groupPrefix, getBarOutput()
+    );
+    m_ipc.getSocket1Reply("dispatch focuswindow address:0x" + targetAddress);
+  });
+  
+  groupBox->pack_start(*iconBtn, false, false);
+}
+
+// Add the group to main box
+m_box.add(*groupBox);
+// Track for cleanup - change from m_collapsedButtons to m_collapsedGroups
+m_collapsedGroups.push_back(groupBox);
 ```
 
-**Alternative Approach if EventBox doesn't work:**
-Instead of trying to intercept events in EventBox, make the icons actual Buttons:
-```cpp
-auto* iconBtn = Gtk::manage(new Gtk::Button());
-iconBtn->set_relief(Gtk::RELIEF_NONE);
-iconBtn->add(*icon);
-// iconBtn.signal_clicked() will fire INSTEAD of parent button
-```
+**Key Changes:**
+- Container is now a Box, not a Button
+- Label is a Button (handles workspace switching)
+- Each icon is a Button (handles window focusing)
+- No more EventBox wrappers
+- No event propagation issues
 
 ### Step 1: Build Window Address to Workspace Mapping
 When collecting icons (lines 1480-1495), also build:
@@ -166,33 +212,10 @@ std::map<std::string, std::string> addressToWorkspace;
 // Maps window address -> workspace name
 ```
 
-### Step 2: Enhance Icon Click Handler
-Replace simple `firstWindowAddress` capture with:
-```cpp
-// Capture ALL needed data
-std::string iconName = ...;  // The icon identifier
-std::vector<std::string> allAddresses = iconToAddresses[iconName];
-std::map<std::string, std::string> addrToWs = addressToWorkspace;
-std::string groupPrefixCopy = groupPrefix;
-std::string monitorCopy = getBarOutput();
+### Step 2: Implement Smart Window Selection
 
-eventBox->signal_button_press_event().connect(
-  [this, iconName, allAddresses, addrToWs, groupPrefixCopy, monitorCopy]
-  (GdkEventButton* event) -> bool {
-    if (event->button == 1) {
-      std::string targetAddress = selectBestWindowForIcon(
-        allAddresses, addrToWs, groupPrefixCopy, monitorCopy
-      );
-      spdlog::debug("[WICONS] Collapsed icon '{}' clicked, focusing: {}", 
-                    iconName, targetAddress);
-      m_ipc.getSocket1Reply("dispatch focuswindow address:0x" + targetAddress);
-      return true;
-    }
-    return false;
-  });
-```
+Add the helper method to select the best window:
 
-### Step 3: Implement Selection Algorithm
 ```cpp
 std::string Workspaces::selectBestWindowForIcon(
   const std::vector<std::string>& addresses,
@@ -200,6 +223,11 @@ std::string Workspaces::selectBestWindowForIcon(
   const std::string& groupPrefix,
   const std::string& monitor
 ) {
+  if (addresses.empty()) {
+    spdlog::error("[ICON_CLICK] No addresses provided");
+    return "";
+  }
+  
   // Build key for last active lookup
   std::string key = groupPrefix + "@" + monitor;
   
@@ -212,28 +240,58 @@ std::string Workspaces::selectBestWindowForIcon(
     for (const auto& addr : addresses) {
       auto wsIt = addressToWorkspace.find(addr);
       if (wsIt != addressToWorkspace.end() && wsIt->second == lastActiveWs) {
-        spdlog::debug("[WICONS] Found window in last active workspace '{}'", lastActiveWs);
+        spdlog::info("[ICON_CLICK] Found window in last active workspace '{}': {}", 
+                     lastActiveWs, addr);
         return addr;
       }
     }
+    
+    spdlog::debug("[ICON_CLICK] No window in last active workspace '{}', using first", 
+                  lastActiveWs);
+  } else {
+    spdlog::debug("[ICON_CLICK] No last active workspace for group '{}', using first", 
+                  groupPrefix);
   }
   
   // Fallback: return first window
-  spdlog::debug("[WICONS] No window in last active workspace, using first");
   return addresses[0];
 }
 ```
 
-### Step 4: Add Method Declaration
-In `workspaces.hpp`, add to Workspaces class:
+### Step 3: Update Header File
+
+In `include/modules/hyprland/workspaces.hpp`:
+
 ```cpp
 private:
+  // Change tracking variable
+  std::vector<Gtk::Box*> m_collapsedGroups;  // Was m_collapsedButtons
+  
+  // Add helper method
   std::string selectBestWindowForIcon(
     const std::vector<std::string>& addresses,
     const std::map<std::string, std::string>& addressToWorkspace,
     const std::string& groupPrefix,
     const std::string& monitor
   );
+```
+
+### Step 4: Update Cleanup Code
+
+Find where `m_collapsedButtons` is cleared (around line 1420):
+
+```cpp
+// Old
+for (auto& btn : m_collapsedButtons) {
+  m_box.remove(*btn);
+}
+m_collapsedButtons.clear();
+
+// New  
+for (auto* groupBox : m_collapsedGroups) {
+  m_box.remove(*groupBox);
+}
+m_collapsedGroups.clear();
 ```
 
 ## Edge Cases
@@ -245,26 +303,55 @@ private:
 
 ## Testing Checklist
 
-- [ ] Click on icon in collapsed group with single window
-- [ ] Click on icon representing multiple windows in same workspace
-- [ ] Click on icon representing windows across multiple workspaces
-- [ ] Click on icon when last active workspace has the window
-- [ ] Click on icon when last active workspace doesn't have the window
-- [ ] Click on `[`, `]`, or prefix label -> should focus workspace (existing behavior)
-- [ ] Verify click propagation is stopped (icon click shouldn't trigger button click)
+- [ ] Collapsed group displays correctly: `[prefix] icon1 icon2`
+- [ ] Click on label button switches to last active workspace in group
+- [ ] Click on label button (no history) switches to first workspace in group
+- [ ] Click on icon representing single window focuses that window
+- [ ] Click on icon representing multiple windows in same workspace focuses one
+- [ ] Click on icon representing windows across multiple workspaces:
+  - [ ] When last active workspace has a matching window → focuses it
+  - [ ] When last active workspace doesn't have matching window → focuses first
+- [ ] CSS styling still looks good (may need adjustments)
+- [ ] Empty groups show correctly
+- [ ] No event handling conflicts or errors in logs
+
+## CSS Considerations
+
+User's CSS may need updates to style the new structure:
+
+**Old selectors that might break:**
+```css
+.collapsed-project { /* Was the button */ }
+```
+
+**New selectors needed:**
+```css
+.collapsed-project-group { /* Container box */ }
+.collapsed-project-label { /* Label button */ }
+.collapsed-project-icon  { /* Icon buttons */ }
+
+/* Or unified styling: */
+.collapsed-project-group > button { /* All buttons */ }
+```
+
+We should apply `.collapsed-project` class to the container Box for backward compatibility, and add specific classes for label/icon buttons.
 
 ## Files to Modify
 
 1. `src/modules/hyprland/workspaces.cpp`:
-   - Modify icon click handler (~line 1545)
-   - Build addressToWorkspace map (~line 1490)
-   - Add selectBestWindowForIcon() method (new)
+   - **Refactor collapsed group creation** (~lines 1448-1620): Replace Button+EventBox with Box+Buttons
+   - **Build addressToWorkspace map** (~line 1490)
+   - **Add selectBestWindowForIcon() method** (new, ~30 lines)
+   - **Update cleanup code** (~line 1420): Change m_collapsedButtons to m_collapsedGroups
 
 2. `include/modules/hyprland/workspaces.hpp`:
-   - Add selectBestWindowForIcon() declaration
+   - Change `std::vector<std::unique_ptr<Gtk::Button>> m_collapsedButtons` to `std::vector<Gtk::Box*> m_collapsedGroups`
+   - Add `selectBestWindowForIcon()` declaration
 
 ## Estimated Lines Changed
 
-- ~30 lines added (new method + data collection)
-- ~15 lines modified (icon click handler)
-- Total: ~45 lines
+- ~80 lines refactored (collapsed group creation - structural change)
+- ~30 lines added (selectBestWindowForIcon method)
+- ~5 lines modified (cleanup code)
+- ~10 lines added (addressToWorkspace mapping)
+- Total: ~125 lines (but most are restructuring existing code)
