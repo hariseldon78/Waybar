@@ -1293,6 +1293,30 @@ std::optional<std::string> Workspaces::getIconNameForClass(const std::string& wi
   return std::nullopt;
 }
 
+bool Workspaces::isWorkspaceInActiveGroup(const std::string& workspaceName) {
+  // Find the active workspace
+  auto activeWorkspace = std::find_if(m_workspaces.begin(), m_workspaces.end(),
+                                      [](const auto& ws) { return ws->isActive(); });
+  
+  if (activeWorkspace == m_workspaces.end()) {
+    // No active workspace, show no icons
+    return false;
+  }
+  
+  // Extract project prefix from both workspaces
+  auto activePrefix = extractProjectPrefix((*activeWorkspace)->name());
+  auto thisPrefix = extractProjectPrefix(workspaceName);
+  
+  // Both must have a prefix and they must match
+  if (!activePrefix.has_value() || !thisPrefix.has_value()) {
+    // One or both don't have a project prefix
+    // Check if they're the same workspace (for single workspaces without groups)
+    return workspaceName == (*activeWorkspace)->name();
+  }
+  
+  return activePrefix.value() == thisPrefix.value();
+}
+
 int Workspaces::countWorkspacesInProject(const std::string& prefix) {
   int count = 0;
   for (const auto& ws : m_workspaces) {

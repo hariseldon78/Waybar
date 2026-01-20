@@ -68,6 +68,11 @@ class Workspaces : public AModule, public EventHandler {
 
   bool windowRewriteConfigUsesTitle() const { return m_anyWindowRewriteRuleUsesTitle; }
   const IconLoader& iconLoader() const { return m_iconLoader; }
+  
+  // Helper methods for icon handling
+  std::vector<std::string> getWorkspaceWindowClasses(Workspace* ws);
+  std::optional<std::string> getIconNameForClass(const std::string& windowClass);
+  bool isWorkspaceInActiveGroup(const std::string& workspaceName);
 
  private:
   void onEvent(const std::string& e) override;
@@ -101,10 +106,6 @@ class Workspaces : public AModule, public EventHandler {
   auto populateWorkspaceTaskbarConfig(const Json::Value& config) -> void;
 
   void registerIpc();
-  
-  // Helper methods for icon handling
-  std::vector<std::string> getWorkspaceWindowClasses(Workspace* ws);
-  std::optional<std::string> getIconNameForClass(const std::string& windowClass);
 
   // workspace events
   void onWorkspaceActivated(std::string const& payload);

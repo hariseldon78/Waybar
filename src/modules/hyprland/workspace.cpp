@@ -441,10 +441,13 @@ void Workspace::updateWindowIcons() {
     return;
   }
 
-  // TODO: Implement current-group logic (for now, treat as ALL for active workspace)
-  if (showMode == Workspaces::ShowWindowIcons::CURRENT_GROUP && !isActive()) {
-    spdlog::debug("[WICONS] Skipping icons for inactive workspace in CURRENT_GROUP mode");
-    return;
+  // Check if we should show icons based on current-group logic
+  if (showMode == Workspaces::ShowWindowIcons::CURRENT_GROUP) {
+    // Show icons only if this workspace is in the active group
+    if (!m_workspaceManager.isWorkspaceInActiveGroup(m_name)) {
+      spdlog::debug("[WICONS] Skipping icons - workspace not in active group");
+      return;
+    }
   }
 
   int icon_size = m_workspaceManager.windowIconSize();
