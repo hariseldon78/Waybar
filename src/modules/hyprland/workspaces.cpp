@@ -1235,6 +1235,15 @@ std::vector<std::string> Workspaces::getWorkspaceWindowClasses(Workspace* ws) {
   return ws->getWindowClasses();
 }
 
+std::vector<Workspaces::WindowInfo> Workspaces::getWorkspaceWindows(Workspace* ws) {
+  auto wsWindows = ws->getWindows();
+  std::vector<WindowInfo> result;
+  for (const auto& w : wsWindows) {
+    result.push_back({w.windowClass, w.windowTitle});
+  }
+  return result;
+}
+
 std::optional<std::string> Workspaces::getIconNameForClass(const std::string& windowClass) {
   // Reuse the icon lookup logic from workspace.cpp
   // For now, we'll include the helper functions directly
@@ -1465,17 +1474,20 @@ void Workspaces::applyProjectCollapsing() {
       if (m_showWindowIcons == ShowWindowIcons::ALL) {
         std::set<std::string> uniqueIconNames;
         std::vector<std::string> iconNamesOrdered;
+        std::map<std::string, std::vector<std::pair<std::string, std::string>>> iconToWorkspaceAndTitles;
         
         for (auto* ws : group.workspaces) {
-          auto windowClasses = getWorkspaceWindowClasses(ws);
-          for (const auto& windowClass : windowClasses) {
-            auto iconNameOpt = getIconNameForClass(windowClass);
+          auto windows = getWorkspaceWindows(ws);
+          for (const auto& window : windows) {
+            auto iconNameOpt = getIconNameForClass(window.windowClass);
             if (iconNameOpt.has_value()) {
               std::string iconName = iconNameOpt.value();
               if (uniqueIconNames.find(iconName) == uniqueIconNames.end()) {
                 uniqueIconNames.insert(iconName);
                 iconNamesOrdered.push_back(iconName);
               }
+              // Collect workspace name and window title for tooltip
+              iconToWorkspaceAndTitles[iconName].push_back({ws->name(), window.windowTitle});
             }
           }
         }
@@ -1498,6 +1510,25 @@ void Workspaces::applyProjectCollapsing() {
             // Icon name from theme
             icon->set_from_icon_name(iconName, Gtk::ICON_SIZE_INVALID);
           }
+          
+          // Build tooltip from workspace names and window titles
+          const auto& workspaceAndTitles = iconToWorkspaceAndTitles[iconName];
+          std::string tooltip;
+          if (workspaceAndTitles.size() == 1) {
+            // Single window: workspace + title
+            tooltip = workspaceAndTitles[0].first + ": " + workspaceAndTitles[0].second;
+          } else {
+            // Multiple windows: show as list grouped by workspace
+            tooltip = iconName + ":\n";
+            for (const auto& [wsName, title] : workspaceAndTitles) {
+              tooltip += "  " + wsName + ": " + title + "\n";
+            }
+            // Remove trailing newline
+            if (!tooltip.empty() && tooltip.back() == '\n') {
+              tooltip.pop_back();
+            }
+          }
+          icon->set_tooltip_text(tooltip);
           
           icon->show();
           contentBox->pack_start(*icon, false, false);

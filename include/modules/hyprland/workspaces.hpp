@@ -70,7 +70,13 @@ class Workspaces : public AModule, public EventHandler {
   const IconLoader& iconLoader() const { return m_iconLoader; }
   
   // Helper methods for icon handling
+  struct WindowInfo {
+    std::string windowClass;
+    std::string windowTitle;
+  };
+  
   std::vector<std::string> getWorkspaceWindowClasses(Workspace* ws);
+  std::vector<WindowInfo> getWorkspaceWindows(Workspace* ws);
   std::optional<std::string> getIconNameForClass(const std::string& windowClass);
   bool isWorkspaceInActiveGroup(const std::string& workspaceName);
 

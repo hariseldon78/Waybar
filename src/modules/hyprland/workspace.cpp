@@ -452,9 +452,10 @@ void Workspace::updateWindowIcons() {
 
   int icon_size = m_workspaceManager.windowIconSize();
   
-  // Collect window icons (deduplicate for future collapsed group support)
+  // Collect window icons and their titles (deduplicate icons, collect all titles)
   std::set<std::string> unique_icons;
   std::vector<std::string> icon_names_ordered;
+  std::map<std::string, std::vector<std::string>> icon_to_titles;
   
   for (const auto& window : m_windowMap) {
     spdlog::debug("[WICONS]   Window: class='{}', title='{}', skip={}", 
@@ -468,10 +469,15 @@ void Workspace::updateWindowIcons() {
     if (icon_name_opt.has_value()) {
       std::string icon_name = icon_name_opt.value();
       spdlog::debug("[WICONS]     Found icon: '{}'", icon_name);
+      
+      // Add to ordered list if first occurrence
       if (unique_icons.find(icon_name) == unique_icons.end()) {
         unique_icons.insert(icon_name);
         icon_names_ordered.push_back(icon_name);
       }
+      
+      // Collect window title for tooltip
+      icon_to_titles[icon_name].push_back(window.window_title);
     } else {
       spdlog::debug("[WICONS]     No icon found for class '{}'", window.window_class);
     }
@@ -500,6 +506,25 @@ void Workspace::updateWindowIcons() {
       img->set_from_icon_name(icon_name, Gtk::ICON_SIZE_INVALID);
       spdlog::debug("[WICONS] Loaded icon from theme: {}", icon_name);
     }
+    
+    // Build tooltip from window titles
+    const auto& titles = icon_to_titles[icon_name];
+    std::string tooltip;
+    if (titles.size() == 1) {
+      // Single window: just show the title
+      tooltip = titles[0];
+    } else {
+      // Multiple windows: show as list
+      tooltip = icon_name + ":\n";
+      for (const auto& title : titles) {
+        tooltip += "• " + title + "\n";
+      }
+      // Remove trailing newline
+      if (!tooltip.empty() && tooltip.back() == '\n') {
+        tooltip.pop_back();
+      }
+    }
+    img->set_tooltip_text(tooltip);
     
     img->show();
     m_iconBox.pack_start(*img, false, false);
@@ -537,6 +562,16 @@ std::vector<std::string> Workspace::getWindowClasses() const {
     }
   }
   return classes;
+}
+
+std::vector<Workspace::WindowInfo> Workspace::getWindows() const {
+  std::vector<WindowInfo> windows;
+  for (const auto& window : m_windowMap) {
+    if (!shouldSkipWindow(window)) {
+      windows.push_back({window.window_class, window.window_title});
+    }
+  }
+  return windows;
 }
 
 void Workspace::updateTaskbar(const std::string &workspace_icon) {
