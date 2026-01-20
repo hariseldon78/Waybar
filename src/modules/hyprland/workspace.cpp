@@ -434,8 +434,6 @@ void Workspace::updateWindowIcons() {
   m_iconBox.hide();
 
   auto showMode = m_workspaceManager.showWindowIcons();
-  spdlog::debug("[WICONS] updateWindowIcons: workspace '{}' (id {}), showMode={}, isActive={}, windowCount={}", 
-                m_name, m_id, static_cast<int>(showMode), isActive(), m_windowMap.size());
   
   if (showMode == Workspaces::ShowWindowIcons::NONE) {
     return;
@@ -445,7 +443,6 @@ void Workspace::updateWindowIcons() {
   if (showMode == Workspaces::ShowWindowIcons::CURRENT_GROUP) {
     // Show icons only if this workspace is in the active group
     if (!m_workspaceManager.isWorkspaceInActiveGroup(m_name)) {
-      spdlog::debug("[WICONS] Skipping icons - workspace not in active group");
       return;
     }
   }
@@ -459,9 +456,6 @@ void Workspace::updateWindowIcons() {
   std::map<std::string, std::vector<std::string>> icon_to_addresses;
   
   for (const auto& window : m_windowMap) {
-    spdlog::debug("[WICONS]   Window: class='{}', title='{}', skip={}", 
-                  window.window_class, window.window_title, shouldSkipWindow(window));
-    
     if (shouldSkipWindow(window)) {
       continue;
     }
@@ -469,7 +463,6 @@ void Workspace::updateWindowIcons() {
     auto icon_name_opt = getIconName(window.window_class, "");
     if (icon_name_opt.has_value()) {
       std::string icon_name = icon_name_opt.value();
-      spdlog::debug("[WICONS]     Found icon: '{}'", icon_name);
       
       // Add to ordered list if first occurrence
       if (unique_icons.find(icon_name) == unique_icons.end()) {
@@ -480,12 +473,8 @@ void Workspace::updateWindowIcons() {
       // Collect window title and address for tooltip and click handler
       icon_to_titles[icon_name].push_back(window.window_title);
       icon_to_addresses[icon_name].push_back(window.address);
-    } else {
-      spdlog::debug("[WICONS]     No icon found for class '{}'", window.window_class);
     }
   }
-
-  spdlog::debug("[WICONS] Total unique icons to render: {}", icon_names_ordered.size());
 
   // Create and add icon images
   for (const auto& icon_name : icon_names_ordered) {
@@ -497,7 +486,6 @@ void Workspace::updateWindowIcons() {
       try {
         auto pixbuf = Gdk::Pixbuf::create_from_file(icon_name, icon_size, icon_size);
         img->set(pixbuf);
-        spdlog::debug("[WICONS] Loaded icon from file: {}", icon_name);
       } catch (const Glib::Error& e) {
         spdlog::warn("[WICONS] Failed to load icon from file {}: {}", icon_name, e.what().c_str());
         delete img;
@@ -506,7 +494,6 @@ void Workspace::updateWindowIcons() {
     } else {
       // Icon name - load from theme
       img->set_from_icon_name(icon_name, Gtk::ICON_SIZE_INVALID);
-      spdlog::debug("[WICONS] Loaded icon from theme: {}", icon_name);
     }
     
     // Build tooltip from window titles
@@ -536,11 +523,13 @@ void Workspace::updateWindowIcons() {
     const auto& addresses = icon_to_addresses[icon_name];
     if (!addresses.empty()) {
       std::string firstWindowAddress = addresses[0];
-      eventBox->signal_button_press_event().connect([this, firstWindowAddress](GdkEventButton* event) -> bool {
+      eventBox->signal_button_press_event().connect([this, firstWindowAddress, icon_name](GdkEventButton* event) -> bool {
         if (event->button == 1) {  // Left click
-          spdlog::debug("[WICONS] Icon clicked, focusing window: 0x{}", firstWindowAddress);
+          spdlog::debug("[WICONS] Icon clicked, focusing window: {}", firstWindowAddress);
           std::string response = m_workspaceManager.getIpc().getSocket1Reply("dispatch focuswindow address:0x" + firstWindowAddress);
-          spdlog::debug("[WICONS] Hyprland response: '{}'", response);
+          if (response.find("ok") == std::string::npos && !response.empty()) {
+            spdlog::debug("[WICONS] Hyprland response: '{}'", response);
+          }
           return true;
         }
         return false;
@@ -554,10 +543,7 @@ void Workspace::updateWindowIcons() {
   }
 
   if (!m_iconImages.empty()) {
-    spdlog::debug("[WICONS] Showing icon box with {} icons", m_iconImages.size());
     m_iconBox.show();
-  } else {
-    spdlog::debug("[WICONS] No icons to show");
   }
 }
 

@@ -1541,12 +1541,15 @@ void Workspaces::applyProjectCollapsing() {
           const auto& addresses = iconToAddresses[iconName];
           if (!addresses.empty()) {
             std::string firstWindowAddress = addresses[0];
+            // Use button_press_event to intercept before parent button
             eventBox->signal_button_press_event().connect([this, firstWindowAddress](GdkEventButton* event) -> bool {
               if (event->button == 1) {  // Left click
-                spdlog::debug("[WICONS] Collapsed group icon clicked, focusing window: 0x{}", firstWindowAddress);
+                spdlog::debug("[WICONS] Collapsed icon clicked, focusing window: {}", firstWindowAddress);
                 std::string response = m_ipc.getSocket1Reply("dispatch focuswindow address:0x" + firstWindowAddress);
-                spdlog::debug("[WICONS] Hyprland response: '{}'", response);
-                return true;
+                if (response.find("ok") == std::string::npos && !response.empty()) {
+                  spdlog::debug("[WICONS] Hyprland response: '{}'", response);
+                }
+                return true;  // Stop propagation to parent button
               }
               return false;
             });
@@ -1556,8 +1559,6 @@ void Workspaces::applyProjectCollapsing() {
           icon->show();
           contentBox->pack_start(*eventBox, false, false);
         }
-        
-        spdlog::debug("[WICONS] Collapsed group '{}' showing {} deduplicated icons", prefix, iconNamesOrdered.size());
       }
       
       // Add closing bracket
