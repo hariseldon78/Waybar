@@ -1454,11 +1454,16 @@ void Workspaces::applyProjectCollapsing() {
       collapsedBtn->get_style_context()->add_class("collapsed-project");
       collapsedBtn->get_style_context()->add_class(MODULE_CLASS);
       
-      // Create content: [prefix] + icons
+      // Create content: [ + prefix + icons ]
       auto* contentBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2));
-      auto* label = Gtk::manage(new Gtk::Label("[" + displayPrefix + "]"));
-      contentBox->pack_start(*label, false, false);
-      label->show();
+      auto* openBracket = Gtk::manage(new Gtk::Label("["));
+      contentBox->pack_start(*openBracket, false, false);
+      openBracket->show();
+      
+      // Add prefix first
+      auto* prefixLabel = Gtk::manage(new Gtk::Label(displayPrefix));
+      contentBox->pack_start(*prefixLabel, false, false);
+      prefixLabel->show();
       
       // Collect and deduplicate icons from all workspaces in this group
       if (m_showWindowIcons == ShowWindowIcons::ALL) {
@@ -1466,12 +1471,8 @@ void Workspaces::applyProjectCollapsing() {
         std::vector<std::string> iconNamesOrdered;
         
         for (auto* ws : group.workspaces) {
-          // Access the workspace's window map to get icons
-          // We need to iterate through windows and collect their icons
-          // For now, we'll call a helper method on the workspace
           auto windowClasses = getWorkspaceWindowClasses(ws);
           for (const auto& windowClass : windowClasses) {
-            // Reuse the icon lookup logic
             auto iconNameOpt = getIconNameForClass(windowClass);
             if (iconNameOpt.has_value()) {
               std::string iconName = iconNameOpt.value();
@@ -1483,7 +1484,7 @@ void Workspaces::applyProjectCollapsing() {
           }
         }
         
-        // Add icons to the button
+        // Add icons after prefix, inside brackets
         for (const auto& iconName : iconNamesOrdered) {
           auto* icon = Gtk::manage(new Gtk::Image());
           icon->set_pixel_size(m_windowIconSize);
@@ -1508,6 +1509,11 @@ void Workspaces::applyProjectCollapsing() {
         
         spdlog::debug("[WICONS] Collapsed group '{}' showing {} deduplicated icons", prefix, iconNamesOrdered.size());
       }
+      
+      // Add closing bracket
+      auto* closeBracket = Gtk::manage(new Gtk::Label("]"));
+      contentBox->pack_start(*closeBracket, false, false);
+      closeBracket->show();
       
       contentBox->show();
       collapsedBtn->add(*contentBox);
