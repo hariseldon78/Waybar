@@ -217,7 +217,7 @@ waybar::AModule* waybar::Factory::makeModule(const std::string& name,
       return new waybar::modules::hyprland::Submap(id, bar_, config_[name]);
     }
     if (ref == "hyprland/fancy-workspaces") {
-      return new waybar::modules::hyprland::Workspaces(id, bar_, config_[name]);
+      return new waybar::modules::hyprland::FancyWorkspaces(id, bar_, config_[name]);
     }
 #endif
 #ifdef HAVE_NIRI

@@ -27,12 +27,12 @@ using WindowAddress = std::string;
 namespace waybar::modules::hyprland {
 
 class FancyWorkspace;
-class Workspaces;
+class FancyWorkspaces;
 
-class Workspaces : public AModule, public EventHandler {
+class FancyWorkspaces : public AModule, public EventHandler {
  public:
-  Workspaces(const std::string&, const waybar::Bar&, const Json::Value&);
-  ~Workspaces() override;
+  FancyWorkspaces(const std::string&, const waybar::Bar&, const Json::Value&);
+  ~FancyWorkspaces() override;
   void update() override;
   void init();
 

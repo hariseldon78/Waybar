@@ -40,8 +40,8 @@ EnumType EnumParser<EnumType>::parseStringToEnum(const std::string& str,
 
 // Explicit instantiations for specific EnumType types you intend to use
 // Add explicit instantiations for all relevant EnumType types
-template struct EnumParser<modules::hyprland::Workspaces::SortMethod>;
-template struct EnumParser<modules::hyprland::Workspaces::ActiveWindowPosition>;
+template struct EnumParser<modules::hyprland::FancyWorkspaces::SortMethod>;
+template struct EnumParser<modules::hyprland::FancyWorkspaces::ActiveWindowPosition>;
 template struct EnumParser<util::KillSignalAction>;
 
 }  // namespace waybar::util

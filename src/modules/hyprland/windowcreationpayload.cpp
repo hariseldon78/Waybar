@@ -73,7 +73,7 @@ void WindowCreationPayload::clearWorkspaceName() {
   }
 }
 
-bool WindowCreationPayload::isEmpty(Workspaces &workspace_manager) {
+bool WindowCreationPayload::isEmpty(FancyWorkspaces &workspace_manager) {
   if (std::holds_alternative<Repr>(m_window)) {
     return std::get<Repr>(m_window).empty();
   }
@@ -93,7 +93,7 @@ void WindowCreationPayload::moveToWorkspace(std::string &new_workspace_name) {
   m_workspaceName = new_workspace_name;
 }
 
-WindowRepr WindowCreationPayload::repr(Workspaces &workspace_manager) {
+WindowRepr WindowCreationPayload::repr(FancyWorkspaces &workspace_manager) {
   if (std::holds_alternative<Repr>(m_window)) {
     return std::get<Repr>(m_window);
   }
