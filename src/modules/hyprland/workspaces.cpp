@@ -1496,12 +1496,16 @@ void Workspaces::applyProjectCollapsing() {
       groupBox->get_style_context()->add_class("collapsed-project");  // Backward compat
       groupBox->get_style_context()->add_class("collapsed-project-group");
       
-      // Create label button: [prefix]
+      // Add opening bracket label
+      auto* openBracket = Gtk::manage(new Gtk::Label("["));
+      groupBox->pack_start(*openBracket, false, false);
+      
+      // Create label button: prefix (without brackets)
       auto* labelBtn = Gtk::manage(new Gtk::Button());
       labelBtn->set_relief(Gtk::RELIEF_NONE);
       labelBtn->get_style_context()->add_class("collapsed-project-label");
       labelBtn->get_style_context()->add_class(MODULE_CLASS);
-      labelBtn->set_label("[" + displayPrefix + "]");
+      labelBtn->set_label(displayPrefix);  // Just the prefix, no brackets
       
       // Add click handler for label - switches to workspace
       Workspace* firstWorkspace = group.workspaces[0];
@@ -1628,6 +1632,10 @@ void Workspaces::applyProjectCollapsing() {
           groupBox->pack_start(*iconBtn, false, false);
         }
       }
+      
+      // Add closing bracket label
+      auto* closeBracket = Gtk::manage(new Gtk::Label("]"));
+      groupBox->pack_start(*closeBracket, false, false);
       
       // Calculate adjusted position accounting for elements added by earlier groups
       int targetPosition = group.firstPosition + positionOffset;
