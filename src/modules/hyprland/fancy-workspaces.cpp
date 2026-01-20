@@ -1,4 +1,4 @@
-#include "modules/hyprland/workspaces.hpp"
+#include "modules/hyprland/fancy-workspaces.hpp"
 
 #include <json/value.h>
 #include <spdlog/spdlog.h>

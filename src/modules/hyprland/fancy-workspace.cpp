@@ -13,7 +13,7 @@
 #include <glibmm/keyfile.h>
 #include <glibmm/miscutils.h>
 
-#include "modules/hyprland/workspaces.hpp"
+#include "modules/hyprland/fancy-workspaces.hpp"
 #include "util/command.hpp"
 #include "util/icon_loader.hpp"
 #include "util/gtk_icon.hpp"

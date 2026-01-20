@@ -17,7 +17,7 @@
 #include "bar.hpp"
 #include "modules/hyprland/backend.hpp"
 #include "modules/hyprland/windowcreationpayload.hpp"
-#include "modules/hyprland/workspace.hpp"
+#include "modules/hyprland/fancy-workspace.hpp"
 #include "util/enum.hpp"
 #include "util/icon_loader.hpp"
 #include "util/regex_collection.hpp"

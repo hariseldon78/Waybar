@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "modules/hyprland/workspaces.hpp"
+#include "modules/hyprland/fancy-workspaces.hpp"
 #include "util/string.hpp"
 
 namespace waybar::util {

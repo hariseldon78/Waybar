@@ -7,7 +7,7 @@
 #include <utility>
 #include <variant>
 
-#include "modules/hyprland/workspaces.hpp"
+#include "modules/hyprland/fancy-workspaces.hpp"
 
 namespace waybar::modules::hyprland {
 

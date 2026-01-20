@@ -35,7 +35,7 @@
 #include "modules/hyprland/submap.hpp"
 #include "modules/hyprland/window.hpp"
 #include "modules/hyprland/windowcount.hpp"
-#include "modules/hyprland/workspaces.hpp"
+#include "modules/hyprland/fancy-workspaces.hpp"
 #endif
 #ifdef HAVE_NIRI
 #include "modules/niri/language.hpp"
