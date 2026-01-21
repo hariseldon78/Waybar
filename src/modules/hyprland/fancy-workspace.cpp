@@ -465,19 +465,24 @@ void FancyWorkspace::updateWindowIcons() {
     }
 
     auto icon_name_opt = getIconName(window.window_class, "");
+    std::string icon_name;
     if (icon_name_opt.has_value()) {
-      std::string icon_name = icon_name_opt.value();
-
-      // Add to ordered list if first occurrence
-      if (unique_icons.find(icon_name) == unique_icons.end()) {
-        unique_icons.insert(icon_name);
-        icon_names_ordered.push_back(icon_name);
-      }
-
-      // Collect window title and address for tooltip and click handler
-      icon_to_titles[icon_name].push_back(window.window_title);
-      icon_to_addresses[icon_name].push_back(window.address);
+      icon_name = icon_name_opt.value();
+    } else {
+      // Use fallback icon for unrecognized apps
+      icon_name = "application-x-executable";  // Generic app icon
+      spdlog::debug("No icon found for class '{}', using fallback", window.window_class);
     }
+
+    // Add to ordered list if first occurrence
+    if (unique_icons.find(icon_name) == unique_icons.end()) {
+      unique_icons.insert(icon_name);
+      icon_names_ordered.push_back(icon_name);
+    }
+
+    // Collect window title and address for tooltip and click handler
+    icon_to_titles[icon_name].push_back(window.window_title);
+    icon_to_addresses[icon_name].push_back(window.address);
   }
 
   // Create and add icon images
