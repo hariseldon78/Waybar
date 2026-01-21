@@ -1472,6 +1472,12 @@ void FancyWorkspaces::applyProjectCollapsing() {
   }
   m_collapsedGroups.clear();
 
+  // Clear old expanded group boxes
+  for (auto* groupBox : m_expandedGroupBoxes) {
+    m_box.remove(*groupBox);
+  }
+  m_expandedGroupBoxes.clear();
+
   for (auto& btn : m_labelButtons) {
     m_box.remove(*btn);
   }
@@ -1546,6 +1552,27 @@ void FancyWorkspaces::applyProjectCollapsing() {
         } catch (const std::exception& e) {
           spdlog::error("Workspace group label click failed: {}", e.what());
         }
+      });
+
+      // Add right-click handler for label - cleanup empty workspaces
+      std::vector<FancyWorkspace*> groupWorkspaces = group.workspaces;  // Capture by value
+      labelBtn->signal_button_press_event().connect([this, groupWorkspaces, groupPrefix](GdkEventButton* bt) {
+        if (bt->type == GDK_BUTTON_PRESS && bt->button == 3) {
+          spdlog::debug("Right-click on collapsed group '{}', removing empty workspaces", groupPrefix);
+          for (auto* ws : groupWorkspaces) {
+            if (ws->isEmpty()) {
+              std::string cmd = "waybar-workspace-remove.sh " + ws->name();
+              util::command::res result = util::command::exec(cmd, "workspace-remove");
+              if (result.exit_code == 0) {
+                spdlog::info("Removed workspace '{}'", ws->name());
+              } else {
+                spdlog::warn("Workspace removal failed: {}", result.out);
+              }
+            }
+          }
+          return true;
+        }
+        return false;
       });
 
       // Apply empty class if group has no windows
@@ -1687,15 +1714,23 @@ void FancyWorkspaces::applyProjectCollapsing() {
         // Calculate adjusted position
         int pos = group.firstPosition + positionOffset;
 
-        // Add opening bracket
-        auto openBracket = createLabelButton("[");
-        m_box.add(*openBracket);
-        m_box.reorder_child(*openBracket, pos++);
-        openBracket->show();
-        m_labelButtons.push_back(std::move(openBracket));
+        // Create start container: [bracket + label] matching collapsed group structure
+        auto* startBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
+        startBox->get_style_context()->add_class("expanded-group-start");
+        if (group.hasActive) {
+          startBox->get_style_context()->add_class("active-group");
+        }
+        
+        // Use Label for bracket (like collapsed groups do)
+        auto* openBracket = Gtk::manage(new Gtk::Label("["));
+        openBracket->get_style_context()->add_class("group-bracket");
+        if (group.hasActive) {
+          openBracket->get_style_context()->add_class("active-group");
+        }
+        startBox->pack_start(*openBracket, false, false);
 
         // Add project name (make it clickable to create new workspace)
-        auto projectLabel = std::make_unique<Gtk::Button>();
+        auto* projectLabel = Gtk::manage(new Gtk::Button());
         projectLabel->set_label(cleanPrefix);
         projectLabel->set_relief(Gtk::RELIEF_NONE);
         projectLabel->get_style_context()->add_class("workspace-label");
@@ -1703,6 +1738,9 @@ void FancyWorkspaces::applyProjectCollapsing() {
         projectLabel->get_style_context()->add_class(
             "empty");  // Use empty style for project labels
         projectLabel->get_style_context()->add_class(MODULE_CLASS);
+        if (group.hasActive) {
+          projectLabel->get_style_context()->add_class("active-group");
+        }
 
         // Add click handler to create new workspace in this project
         std::string projectName = cleanPrefix;
@@ -1724,10 +1762,33 @@ void FancyWorkspaces::applyProjectCollapsing() {
           }
         });
 
-        m_box.add(*projectLabel);
-        m_box.reorder_child(*projectLabel, pos++);
-        projectLabel->show();
-        m_labelButtons.push_back(std::move(projectLabel));
+        // Add right-click handler to cleanup empty workspaces
+        std::vector<FancyWorkspace*> groupWorkspaces = group.workspaces;
+        projectLabel->signal_button_press_event().connect([this, groupWorkspaces, projectName](GdkEventButton* bt) {
+          if (bt->type == GDK_BUTTON_PRESS && bt->button == 3) {
+            spdlog::debug("Right-click on expanded group '{}', removing empty workspaces", projectName);
+            for (auto* ws : groupWorkspaces) {
+              if (ws->isEmpty()) {
+                std::string cmd = "waybar-workspace-remove.sh " + ws->name();
+                util::command::res result = util::command::exec(cmd, "workspace-remove");
+                if (result.exit_code == 0) {
+                  spdlog::info("Removed workspace '{}'", ws->name());
+                } else {
+                  spdlog::warn("Workspace removal failed: {}", result.out);
+                }
+              }
+            }
+            return true;
+          }
+          return false;
+        });
+
+        startBox->pack_start(*projectLabel, false, false);
+        
+        m_box.add(*startBox);
+        m_box.reorder_child(*startBox, pos++);
+        startBox->show_all();
+        m_expandedGroupBoxes.push_back(startBox);
 
         // Add workspaces (just numbers)
         for (auto* ws : group.workspaces) {
@@ -1743,16 +1804,30 @@ void FancyWorkspaces::applyProjectCollapsing() {
           m_box.reorder_child(ws->button(), pos++);
         }
 
-        // Add closing bracket
-        auto closeBracket = createLabelButton("]");
-        m_box.add(*closeBracket);
-        m_box.reorder_child(*closeBracket, pos);
-        closeBracket->show();
-        m_labelButtons.push_back(std::move(closeBracket));
+        // Create end container: [closing bracket] matching collapsed group structure
+        auto* endBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
+        endBox->get_style_context()->add_class("expanded-group-end");
+        if (group.hasActive) {
+          endBox->get_style_context()->add_class("active-group");
+        }
+        
+        // Use Label for bracket (like collapsed groups do)
+        auto* closeBracket = Gtk::manage(new Gtk::Label("]"));
+        closeBracket->get_style_context()->add_class("group-bracket");
+        if (group.hasActive) {
+          closeBracket->get_style_context()->add_class("active-group");
+        }
+        endBox->pack_start(*closeBracket, false, false);
+        
+        m_box.add(*endBox);
+        m_box.reorder_child(*endBox, pos);
+        endBox->show_all();
+        m_expandedGroupBoxes.push_back(endBox);
+        endBox->show_all();
 
-        // Transformed group adds: bracket + label + bracket = 3 elements
+        // Transformed group adds: startBox + endBox = 2 elements
         // (workspaces already exist, just reordered)
-        elementsAdded = 3;
+        elementsAdded = 2;
       }
     } else {
       // No transform, no collapse - just show normally

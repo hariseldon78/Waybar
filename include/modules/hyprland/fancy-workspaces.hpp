@@ -233,6 +233,7 @@ class FancyWorkspaces : public AModule, public EventHandler {
   
   // Project collapsing state
   std::vector<Gtk::Box*> m_collapsedGroups;  // Container boxes for collapsed groups
+  std::vector<Gtk::Box*> m_expandedGroupBoxes;  // Container boxes for expanded group brackets
   std::vector<std::unique_ptr<Gtk::Button>> m_labelButtons;
   
   // Track last active workspace per group+monitor for collapsed button clicks

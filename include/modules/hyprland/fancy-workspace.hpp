@@ -43,6 +43,7 @@ class FancyWorkspace {
   bool isPersistentRule() const { return m_isPersistentRule; };
   bool isVisible() const { return m_isVisible; };
   bool isUrgent() const { return m_isUrgent; };
+  bool isEmpty() const;
 
   bool handleClicked(GdkEventButton* bt) const;
   void setActive(bool value = true) { m_isActive = value; };
@@ -98,7 +99,6 @@ class FancyWorkspace {
   Gtk::Box m_iconBox;
   std::vector<Gtk::Image*> m_iconImages;
 
-  bool isEmpty() const;
   void updateTaskbar(const std::string& workspace_icon);
   void updateWindowIcons();
   bool handleClick(const GdkEventButton* event_button, WindowAddress const& addr) const;
