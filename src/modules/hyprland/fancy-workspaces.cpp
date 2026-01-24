@@ -727,6 +727,13 @@ auto FancyWorkspaces::parseConfig(const Json::Value& config) -> void {
   m_onWorkspaceCreated = config.get("on-workspace-created", "").asString();
   m_onWorkspaceDestroyed = config.get("on-workspace-destroyed", "").asString();
   
+  if (!m_onWorkspaceCreated.empty()) {
+    spdlog::info("Workspace hook: on-workspace-created = {}", m_onWorkspaceCreated);
+  }
+  if (!m_onWorkspaceDestroyed.empty()) {
+    spdlog::info("Workspace hook: on-workspace-destroyed = {}", m_onWorkspaceDestroyed);
+  }
+  
   populateSortByConfig(config);
   populateIgnoreWorkspacesConfig(config);
   populateFormatWindowSeparatorConfig(config);
