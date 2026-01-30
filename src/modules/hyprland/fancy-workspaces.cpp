@@ -36,6 +36,10 @@ FancyWorkspaces::FancyWorkspaces(const std::string& id, const Bar& bar, const Js
   m_box.get_style_context()->add_class(MODULE_CLASS);
   event_box_.add(m_box);
 
+  // Clean up old thumbnail cache on startup
+  spdlog::info("Cleaning up thumbnail cache on startup");
+  m_thumbnailCache.cleanup(0, 100);  // Remove all thumbnails
+
   setCurrentMonitorId();
   init();
   registerIpc();
@@ -384,6 +388,19 @@ void FancyWorkspaces::onWorkspaceActivated(std::string const& payload) {
   const auto workspaceId = parseWorkspaceId(workspaceIdStr);
   if (workspaceId.has_value()) {
     m_activeWorkspaceId = *workspaceId;
+    
+    // Kill any pending capture process from previous workspace switch
+    if (m_captureProcessPid > 0) {
+      kill(m_captureProcessPid, SIGTERM);
+      m_captureProcessPid = 0;
+    }
+    
+    // Start background capture for all windows in this workspace
+    auto workspace = std::find_if(m_workspaces.begin(), m_workspaces.end(),
+                                   [&workspaceName](const auto& ws) { return ws->name() == workspaceName; });
+    if (workspace != m_workspaces.end()) {
+      captureThumbnailsForWorkspace(workspaceName);
+    }
 
     // Track last active workspace per group for collapsed button behavior
     auto prefix = extractProjectPrefix(workspaceName);
@@ -653,8 +670,42 @@ void FancyWorkspaces::onWindowTitleEvent(std::string const& payload) {
 }
 
 void FancyWorkspaces::onActiveWindowChanged(WindowAddress const& activeWindowAddress) {
-  spdlog::trace("Active window changed: {}", activeWindowAddress);
+  spdlog::debug("[THUMBNAIL] Active window changed: {}", activeWindowAddress);
   m_currentActiveWindowAddress = activeWindowAddress;
+
+  // Capture thumbnail of the newly active window (async)
+  if (!activeWindowAddress.empty() && m_thumbnailCache.isAvailable()) {
+    spdlog::debug("[THUMBNAIL] Starting capture process for {}", activeWindowAddress);
+    Json::Value clientsData = m_ipc.getSocket1JsonReply("clients");
+    std::string jsonWindowAddress = "0x" + activeWindowAddress;
+    
+    auto client = std::ranges::find_if(clientsData, [&jsonWindowAddress](auto& client) {
+      return client["address"].asString() == jsonWindowAddress;
+    });
+    
+    if (client != clientsData.end() && !client->empty()) {
+      int workspaceId = (*client)["workspace"]["id"].asInt();
+      
+      spdlog::debug("[THUMBNAIL] Window workspace ID: {}, active workspace ID: {}", 
+                    workspaceId, m_activeWorkspaceId);
+      
+      // Capture the window (the 300ms delay in captureWindow will let animation finish)
+      int x = (*client)["at"][0].asInt();
+      int y = (*client)["at"][1].asInt();
+      int w = (*client)["size"][0].asInt();
+      int h = (*client)["size"][1].asInt();
+      std::string windowClass = (*client)["class"].asString();
+      std::string windowTitle = (*client)["title"].asString();
+      std::string workspaceName = (*client)["workspace"]["name"].asString();
+      
+      spdlog::debug("[THUMBNAIL] Capturing active window {} ({}x{} at {},{})", 
+                    activeWindowAddress, w, h, x, y);
+      
+      // Capture async (with 300ms delay for animation)
+      m_thumbnailCache.captureWindow(activeWindowAddress, x, y, w, h,
+                                     windowClass, windowTitle, workspaceName);
+    }
+  }
 
   for (auto& [address, window] : m_orphanWindowMap) {
     window.setActive(address == activeWindowAddress);
@@ -916,12 +967,9 @@ auto FancyWorkspaces::registerIpc() -> void {
         "(in window rewrite rules, taskbar, or icon tooltips).");
     m_ipc.registerForIPC("windowtitlev2", this);
   }
-  if (m_updateActiveWindow) {
-    spdlog::info(
-        "Registering for Hyprland's 'activewindowv2' events because 'update-active-window' is set "
-        "to true.");
-    m_ipc.registerForIPC("activewindowv2", this);
-  }
+  // Always register for activewindowv2 for thumbnail capture
+  spdlog::info("Registering for Hyprland's 'activewindowv2' events for thumbnail capture");
+  m_ipc.registerForIPC("activewindowv2", this);
 }
 
 void FancyWorkspaces::removeWorkspacesToRemove() {
@@ -1472,8 +1520,8 @@ void FancyWorkspaces::applyProjectCollapsing() {
     return;
   }
 
-  spdlog::debug("Workspace project collapsing/transform: processing {} workspaces",
-                m_workspaces.size());
+  // spdlog::debug("Workspace project collapsing/transform: processing {} workspaces",
+  //               m_workspaces.size());
 
   // Group workspaces by project prefix
   struct ProjectGroup {
@@ -1522,7 +1570,7 @@ void FancyWorkspaces::applyProjectCollapsing() {
     }
   }
 
-  spdlog::debug("Workspace project features: found {} project groups", groups.size());
+  // spdlog::debug("Workspace project features: found {} project groups", groups.size());
 
   // Sort workspaces within each group numerically by their number
   for (auto& [prefix, group] : groups) {
@@ -1575,7 +1623,7 @@ void FancyWorkspaces::applyProjectCollapsing() {
 
     if (shouldCollapse) {
       // Collapse: hide individual workspaces, show [prefix] with icons as sibling buttons
-      spdlog::debug("Workspace group '{}' -> collapsing to [{}]", prefix, displayPrefix);
+      // spdlog::debug("Workspace group '{}' -> collapsing to [{}]", prefix, displayPrefix);
       for (auto* ws : group.workspaces) {
         ws->button().hide();
       }
@@ -1716,27 +1764,70 @@ void FancyWorkspaces::applyProjectCollapsing() {
 
           iconBtn->add(*icon);
 
-          // Build tooltip from workspace names and window titles
+          // Build tooltip data - keep structured for interleaving
           const auto& workspaceAndTitles = iconToWorkspaceAndTitles[iconName];
-          std::string tooltip;
-          if (workspaceAndTitles.size() == 1) {
-            // Single window: workspace + title
-            tooltip = workspaceAndTitles[0].first + ": " + workspaceAndTitles[0].second;
-          } else {
-            // Multiple windows: show as list grouped by workspace
-            tooltip = iconName + ":\n";
-            for (const auto& [wsName, title] : workspaceAndTitles) {
-              tooltip += "  " + wsName + ": " + title + "\n";
-            }
-            // Remove trailing newline
-            if (!tooltip.empty() && tooltip.back() == '\n') {
-              tooltip.pop_back();
-            }
-          }
-          iconBtn->set_tooltip_text(tooltip);
+          
+          // Set up custom tooltip with thumbnails
+          const auto& iconAddresses = iconToAddresses[iconName];
+          iconBtn->set_has_tooltip(true);
+          iconBtn->signal_query_tooltip().connect(
+              [iconName, workspaceAndTitles, iconAddresses](int x, int y, bool keyboard_tooltip,
+                                       const Glib::RefPtr<Gtk::Tooltip>& tooltip_widget) -> bool {
+                // Create tooltip content box
+                auto* vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+                
+                // Add header
+                auto* header = Gtk::manage(new Gtk::Label(iconName + ":"));
+                header->set_xalign(0.0);
+                vbox->pack_start(*header, false, false);
+                
+                // Interleave thumbnails and titles
+                waybar::util::ThumbnailCache cache;
+                size_t count = std::min(iconAddresses.size(), workspaceAndTitles.size());
+                
+                for (size_t i = 0; i < count; i++) {
+                  const auto& addr = iconAddresses[i];
+                  const auto& [wsName, title] = workspaceAndTitles[i];
+                  
+                  // Try to load thumbnail
+                  auto thumbnail_path = cache.getThumbnailPath(addr);
+                  if (thumbnail_path.has_value()) {
+                    try {
+                      auto pixbuf = Gdk::Pixbuf::create_from_file(thumbnail_path.value());
+                      // Scale thumbnail if needed (max 256x256)
+                      int width = pixbuf->get_width();
+                      int height = pixbuf->get_height();
+                      if (width > 256 || height > 256) {
+                        double scale = std::min(256.0 / width, 256.0 / height);
+                        width = static_cast<int>(width * scale);
+                        height = static_cast<int>(height * scale);
+                        pixbuf = pixbuf->scale_simple(width, height, Gdk::INTERP_BILINEAR);
+                      }
+                      
+                      auto* thumb_img = Gtk::manage(new Gtk::Image(pixbuf));
+                      vbox->pack_start(*thumb_img, false, false);
+                    } catch (const Glib::Error& e) {
+                      spdlog::debug("[ICON_TOOLTIP] Failed to load thumbnail for {}: {}", addr,
+                                    e.what().c_str());
+                    }
+                  }
+                  
+                  // Add title with workspace
+                  std::string titleText = "  " + wsName + ": " + title;
+                  auto* titleLabel = Gtk::manage(new Gtk::Label(titleText));
+                  titleLabel->set_xalign(0.0);
+                  titleLabel->set_line_wrap(true);
+                  titleLabel->set_max_width_chars(50);
+                  vbox->pack_start(*titleLabel, false, false);
+                }
+                
+                vbox->show_all();
+                tooltip_widget->set_custom(*vbox);
+                return true;
+              });
 
           // Check if any of this icon's windows are urgent (by address)
-          const auto& iconAddresses = iconToAddresses[iconName];
+          // (iconAddresses already captured in lambda above)
           bool hasUrgentWindow = std::ranges::any_of(iconAddresses, [this](const std::string& addr) {
             bool isUrgent = m_urgentWindows.contains("0x" + addr);
             if (isUrgent) {
@@ -1787,8 +1878,8 @@ void FancyWorkspaces::applyProjectCollapsing() {
       // Transform names without collapsing
       if (group.workspaces.size() == 1) {
         // Single workspace: show as just prefix name (no number, no brackets)
-        spdlog::debug("Workspace group '{}' -> single workspace, display as '{}'", prefix,
-                      cleanPrefix);
+        // spdlog::debug("Workspace group '{}' -> single workspace, display as '{}'", prefix,
+        //               cleanPrefix);
         auto* ws = group.workspaces[0];
 
         // Set display name to just the prefix - use setLabelText to preserve icons
@@ -1800,7 +1891,7 @@ void FancyWorkspaces::applyProjectCollapsing() {
 
       } else {
         // Multiple workspaces: show as [prefix num num num]
-        spdlog::debug("Workspace group '{}' -> transformed as [{}...]", prefix, cleanPrefix);
+        // spdlog::debug("Workspace group '{}' -> transformed as [{}...]", prefix, cleanPrefix);
 
         // Calculate adjusted position
         int pos = group.firstPosition + positionOffset;
@@ -1975,6 +2066,70 @@ void FancyWorkspaces::executeHook(const std::string& command, const std::string&
     spdlog::error("Failed to fork process for hook execution");
   }
   // Parent continues without waiting
+}
+
+void FancyWorkspaces::captureThumbnailsForWorkspace(const std::string& workspaceName) {
+  if (!m_thumbnailCache.isAvailable()) {
+    return;
+  }
+  
+  spdlog::debug("[THUMBNAIL] Starting batch capture for workspace '{}'", workspaceName);
+  
+  // Find the workspace
+  auto workspace = std::find_if(m_workspaces.begin(), m_workspaces.end(),
+                                [&workspaceName](const auto& ws) { return ws->name() == workspaceName; });
+  
+  if (workspace == m_workspaces.end()) {
+    return;
+  }
+  
+  // Get all windows in this workspace
+  auto windows = getWorkspaceWindows(workspace->get());
+  
+  if (windows.empty()) {
+    spdlog::debug("[THUMBNAIL] No windows in workspace '{}'", workspaceName);
+    return;
+  }
+  
+  // Get current clients data for geometry
+  Json::Value clientsData = m_ipc.getSocket1JsonReply("clients");
+  
+  // Fork a process to handle batch capture with delay
+  pid_t pid = fork();
+  if (pid == 0) {
+    // Child process: wait for animation, then capture all windows one by one
+    usleep(300000); // 300ms for animation
+    
+    spdlog::debug("[THUMBNAIL] Capturing {} windows in workspace '{}'", windows.size(), workspaceName);
+    
+    // Create a new cache instance in child process
+    waybar::util::ThumbnailCache cache;
+    
+    for (const auto& window : windows) {
+      // Find this window's geometry
+      std::string jsonWindowAddress = "0x" + window.windowAddress;
+      
+      auto client = std::ranges::find_if(clientsData, [&jsonWindowAddress](auto& client) {
+        return client["address"].asString() == jsonWindowAddress;
+      });
+      
+      if (client != clientsData.end() && !client->empty()) {
+        int x = (*client)["at"][0].asInt();
+        int y = (*client)["at"][1].asInt();
+        int w = (*client)["size"][0].asInt();
+        int h = (*client)["size"][1].asInt();
+        
+        // Capture synchronously (no extra delay needed, we already waited)
+        cache.captureWindowSync(window.windowAddress, x, y, w, h,
+                               window.windowClass, window.windowTitle, workspaceName);
+      }
+    }
+    
+    _exit(0);
+  } else if (pid > 0) {
+    // Parent: track the PID so we can kill it if needed
+    m_captureProcessPid = pid;
+  }
 }
 
 }  // namespace waybar::modules::hyprland

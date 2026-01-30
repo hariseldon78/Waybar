@@ -16,6 +16,7 @@
 #include "util/command.hpp"
 #include "util/gtk_icon.hpp"
 #include "util/icon_loader.hpp"
+#include "util/thumbnail_cache.hpp"
 
 namespace waybar::modules::hyprland {
 
@@ -526,10 +527,90 @@ void FancyWorkspace::updateWindowIcons() {
     // Wrap icon in EventBox to capture clicks
     auto* eventBox = new Gtk::EventBox();
     eventBox->add(*img);
-    eventBox->set_tooltip_text(tooltip);
+    
+    // Set up custom tooltip with thumbnails - interleave thumbnails and titles
+    // Note: titles and addresses already declared above
+    eventBox->set_has_tooltip(true);
+    const auto& addresses = icon_to_addresses[icon_name];
+    eventBox->signal_query_tooltip().connect(
+        [icon_name, addresses, titles](int x, int y, bool keyboard_tooltip, 
+                            const Glib::RefPtr<Gtk::Tooltip>& tooltip_widget) -> bool {
+          // Create tooltip content box
+          auto* vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+          
+          if (titles.size() == 1) {
+            // Single window - simple layout
+            waybar::util::ThumbnailCache cache;
+            if (!addresses.empty()) {
+              auto thumbnail_path = cache.getThumbnailPath(addresses[0]);
+              if (thumbnail_path.has_value()) {
+                try {
+                  auto pixbuf = Gdk::Pixbuf::create_from_file(thumbnail_path.value());
+                  int width = pixbuf->get_width();
+                  int height = pixbuf->get_height();
+                  if (width > 256 || height > 256) {
+                    double scale = std::min(256.0 / width, 256.0 / height);
+                    width = static_cast<int>(width * scale);
+                    height = static_cast<int>(height * scale);
+                    pixbuf = pixbuf->scale_simple(width, height, Gdk::INTERP_BILINEAR);
+                  }
+                  auto* thumb_img = Gtk::manage(new Gtk::Image(pixbuf));
+                  vbox->pack_start(*thumb_img, false, false);
+                } catch (const Glib::Error& e) {
+                  spdlog::debug("[WICONS] Failed to load thumbnail for {}: {}", addresses[0], e.what().c_str());
+                }
+              }
+            }
+            // Single title
+            auto* label = Gtk::manage(new Gtk::Label(titles[0]));
+            label->set_xalign(0.0);
+            vbox->pack_start(*label, false, false);
+          } else {
+            // Multiple windows - interleave thumbnails and titles
+            auto* header = Gtk::manage(new Gtk::Label(icon_name + ":"));
+            header->set_xalign(0.0);
+            vbox->pack_start(*header, false, false);
+            
+            waybar::util::ThumbnailCache cache;
+            size_t count = std::min(addresses.size(), titles.size());
+            
+            for (size_t i = 0; i < count; i++) {
+              // Thumbnail
+              auto thumbnail_path = cache.getThumbnailPath(addresses[i]);
+              if (thumbnail_path.has_value()) {
+                try {
+                  auto pixbuf = Gdk::Pixbuf::create_from_file(thumbnail_path.value());
+                  int width = pixbuf->get_width();
+                  int height = pixbuf->get_height();
+                  if (width > 256 || height > 256) {
+                    double scale = std::min(256.0 / width, 256.0 / height);
+                    width = static_cast<int>(width * scale);
+                    height = static_cast<int>(height * scale);
+                    pixbuf = pixbuf->scale_simple(width, height, Gdk::INTERP_BILINEAR);
+                  }
+                  auto* thumb_img = Gtk::manage(new Gtk::Image(pixbuf));
+                  vbox->pack_start(*thumb_img, false, false);
+                } catch (const Glib::Error& e) {
+                  spdlog::debug("[WICONS] Failed to load thumbnail for {}: {}", addresses[i], e.what().c_str());
+                }
+              }
+              
+              // Title
+              std::string titleText = "• " + titles[i];
+              auto* titleLabel = Gtk::manage(new Gtk::Label(titleText));
+              titleLabel->set_xalign(0.0);
+              titleLabel->set_line_wrap(true);
+              titleLabel->set_max_width_chars(50);
+              vbox->pack_start(*titleLabel, false, false);
+            }
+          }
+          
+          vbox->show_all();
+          tooltip_widget->set_custom(*vbox);
+          return true;
+        });
 
     // Add click handler to focus the first window
-    const auto& addresses = icon_to_addresses[icon_name];
     if (!addresses.empty()) {
       std::string firstWindowAddress = addresses[0];
       eventBox->signal_button_press_event().connect(

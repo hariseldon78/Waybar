@@ -22,6 +22,7 @@
 #include "util/enum.hpp"
 #include "util/icon_loader.hpp"
 #include "util/regex_collection.hpp"
+#include "util/thumbnail_cache.hpp"
 
 using WindowAddress = std::string;
 
@@ -261,6 +262,12 @@ class FancyWorkspaces : public AModule, public EventHandler {
   const Bar& m_bar;
   Gtk::Box m_box;
   IPC& m_ipc;
+  
+  util::ThumbnailCache m_thumbnailCache;
+  void captureThumbnailsForWorkspace(const std::string& workspaceName);
+  
+  // Track background capture process to kill it if workspace changes
+  pid_t m_captureProcessPid = 0;
 };
 
 }  // namespace waybar::modules::hyprland
