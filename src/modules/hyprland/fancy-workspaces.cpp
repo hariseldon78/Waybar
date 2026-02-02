@@ -1834,6 +1834,8 @@ void FancyWorkspaces::applyProjectCollapsing() {
           if (hasUrgentWindow) {
             spdlog::debug("[ICON_URGENT] Icon '{}' has urgent window, applying class", iconName);
             iconBtn->get_style_context()->add_class("urgent");
+          } else {
+            iconBtn->get_style_context()->remove_class("urgent");
           }
 
           // Add click handler for icon - smart window focus
