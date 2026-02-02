@@ -7,8 +7,6 @@
 #include <json/value.h>
 #include <spdlog/spdlog.h>
 #include <unistd.h>
-#include <signal.h>
-#include <sys/wait.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -24,12 +22,6 @@
 
 namespace waybar::modules::hyprland {
 
-static void sigchld_handler(int sig) {
-  int saved_errno = errno;
-  while (waitpid(-1, nullptr, WNOHANG) > 0);
-  errno = saved_errno;
-}
-
 FancyWorkspaces::FancyWorkspaces(const std::string& id, const Bar& bar, const Json::Value& config)
     : AModule(config, "workspaces", id, false, false),
       m_bar(bar),
@@ -43,15 +35,6 @@ FancyWorkspaces::FancyWorkspaces(const std::string& id, const Bar& bar, const Js
   }
   m_box.get_style_context()->add_class(MODULE_CLASS);
   event_box_.add(m_box);
-
-  // Install SIGCHLD handler to reap zombie processes from thumbnail capture forks
-  struct sigaction sa;
-  sa.sa_handler = sigchld_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
-  if (sigaction(SIGCHLD, &sa, nullptr) == -1) {
-    spdlog::error("Failed to install SIGCHLD handler: {}", strerror(errno));
-  }
 
   // Clean up old thumbnail cache on startup
   spdlog::info("Cleaning up thumbnail cache on startup");
@@ -2107,40 +2090,43 @@ void FancyWorkspaces::captureThumbnailsForWorkspace(const std::string& workspace
   // Get current clients data for geometry
   Json::Value clientsData = m_ipc.getSocket1JsonReply("clients");
   
-  // Fork a process to handle batch capture with delay
-  pid_t pid = fork();
-  if (pid == 0) {
-    // Child process: wait for animation, then capture all windows one by one
-    usleep(300000); // 300ms for animation
-    
-    spdlog::debug("[THUMBNAIL] Capturing {} windows in workspace '{}'", windows.size(), workspaceName);
-    
-    // Create a new cache instance in child process
-    waybar::util::ThumbnailCache cache;
-    
-    for (const auto& window : windows) {
-      // Find this window's geometry
-      std::string jsonWindowAddress = "0x" + window.windowAddress;
+  // Schedule capture after animation delay using GTK event loop
+  Glib::signal_timeout().connect_once(
+    [this, workspaceName, windows, clientsData]() {
+      // Validate workspace hasn't changed (prevents corrupted thumbnails)
+      auto currentWorkspace = m_ipc.getSocket1JsonReply("activeworkspace");
+      std::string currentName = currentWorkspace["name"].asString();
       
-      auto client = std::ranges::find_if(clientsData, [&jsonWindowAddress](auto& client) {
-        return client["address"].asString() == jsonWindowAddress;
-      });
-      
-      if (client != clientsData.end() && !client->empty()) {
-        int x = (*client)["at"][0].asInt();
-        int y = (*client)["at"][1].asInt();
-        int w = (*client)["size"][0].asInt();
-        int h = (*client)["size"][1].asInt();
-        
-        // Capture synchronously (no extra delay needed, we already waited)
-        cache.captureWindowSync(window.windowAddress, x, y, w, h,
-                               window.windowClass, window.windowTitle, workspaceName);
+      if (currentName != workspaceName) {
+        spdlog::debug("[THUMBNAIL] Workspace changed during delay, skipping capture for '{}'", 
+                      workspaceName);
+        return;
       }
-    }
-    
-    _exit(0);
-  }
-  // Parent continues immediately - child will be reaped by SIGCHLD handler
+      
+      spdlog::debug("[THUMBNAIL] Capturing {} windows in workspace '{}'", 
+                    windows.size(), workspaceName);
+      
+      for (const auto& window : windows) {
+        // Find this window's geometry
+        std::string jsonWindowAddress = "0x" + window.windowAddress;
+        
+        auto client = std::ranges::find_if(clientsData, [&jsonWindowAddress](auto& client) {
+          return client["address"].asString() == jsonWindowAddress;
+        });
+        
+        if (client != clientsData.end() && !client->empty()) {
+          int x = (*client)["at"][0].asInt();
+          int y = (*client)["at"][1].asInt();
+          int w = (*client)["size"][0].asInt();
+          int h = (*client)["size"][1].asInt();
+          
+          m_thumbnailCache.captureWindowSync(window.windowAddress, x, y, w, h,
+                                             window.windowClass, window.windowTitle, workspaceName);
+        }
+      }
+    },
+    300  // 300ms delay for animation
+  );
 }
 
 }  // namespace waybar::modules::hyprland
