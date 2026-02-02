@@ -1699,6 +1699,8 @@ void FancyWorkspaces::applyProjectCollapsing() {
       // Apply urgent class if any workspace in group is urgent
       if (group.hasUrgent) {
         labelBtn->get_style_context()->add_class("urgent");
+      } else {
+        labelBtn->get_style_context()->remove_class("urgent");
       }
 
       groupBox->pack_start(*labelBtn, false, false);
