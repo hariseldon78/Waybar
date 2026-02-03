@@ -221,6 +221,13 @@ bool FancyWorkspace::handleClicked(GdkEventButton* bt) const {
         spdlog::info("#DEBUG Click handler: workspace='{}' id={} isActive={} isSpecial={} isPersistent={} isEmpty={}", 
                      name(), id(), isActive(), isSpecial(), isPersistent(), isEmpty());
         
+        // Safety check: Never dispatch workspaces with ID=0 (invalid state)
+        if (id() == 0) {
+          spdlog::error("#DEBUG Refusing to dispatch workspace with ID=0: name='{}' isPersistent={}", 
+                        name(), isPersistent());
+          return true;  // Consume the click to prevent issues
+        }
+        
         if (id() > 0) {  // normal
           spdlog::info("#DEBUG Dispatching to numbered workspace id={}", id());
           if (m_workspaceManager.moveToMonitor()) {
