@@ -208,11 +208,12 @@ bool FancyWorkspace::handleClicked(GdkEventButton* bt) const {
             util::command::exec("waybar-workspace-create-current.sh", "workspace-create");
         if (result.exit_code == 0) {
           spdlog::info("Created new workspace via script");
-          return true;
         } else {
           spdlog::warn("Workspace creation script failed: {}", result.out);
-          // Fall through to normal behavior
         }
+        // Always return true to prevent dispatching workspace switch on already-active workspace
+        // This prevents Hyprland crash when clicking on empty active workspaces
+        return true;
       }
 
       // Normal workspace switching behavior (left-click on inactive workspace)
