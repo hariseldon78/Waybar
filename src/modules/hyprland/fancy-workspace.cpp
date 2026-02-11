@@ -530,11 +530,11 @@ void FancyWorkspace::updateWindowIcons() {
     eventBox->add(*img);
     
     bool showThumbnails = m_workspaceManager.showThumbnails();
+    const auto& addresses = icon_to_addresses[icon_name];
     
     if (showThumbnails) {
       // Set up popup on hover with thumbnails
       eventBox->add_events(Gdk::ENTER_NOTIFY_MASK | Gdk::LEAVE_NOTIFY_MASK);
-      const auto& addresses = icon_to_addresses[icon_name];
       
       // Mouse enter - show popup
       eventBox->signal_enter_notify_event().connect(
