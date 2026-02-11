@@ -670,7 +670,7 @@ void FancyWorkspaces::onActiveWindowChanged(WindowAddress const& activeWindowAdd
   m_currentActiveWindowAddress = activeWindowAddress;
 
   // Capture thumbnail of the newly active window (async)
-  if (!activeWindowAddress.empty() && m_thumbnailCache.isAvailable()) {
+  if (m_showThumbnails && !activeWindowAddress.empty() && m_thumbnailCache.isAvailable()) {
     spdlog::debug("[THUMBNAIL] Starting capture process for {}", activeWindowAddress);
     Json::Value clientsData = m_ipc.getSocket1JsonReply("clients");
     std::string jsonWindowAddress = "0x" + activeWindowAddress;
@@ -737,6 +737,7 @@ auto FancyWorkspaces::parseConfig(const Json::Value& config) -> void {
   populateBoolConfig(config, "move-to-monitor", m_moveToMonitor);
   populateBoolConfig(config, "collapse-inactive-projects", m_collapseInactiveProjects);
   populateBoolConfig(config, "transform-workspace-names", m_transformWorkspaceNames);
+  populateBoolConfig(config, "show-thumbnails", m_showThumbnails);
 
   // Parse show-window-icons config
   const auto& showWindowIconsConfig = config["show-window-icons"];
@@ -1804,8 +1805,9 @@ void FancyWorkspaces::applyProjectCollapsing() {
           // Set up custom tooltip with thumbnails
           const auto& iconAddresses = iconToAddresses[iconName];
           iconBtn->set_has_tooltip(true);
+          bool showThumbnails = m_showThumbnails;
           iconBtn->signal_query_tooltip().connect(
-              [iconName, workspaceAndTitles, iconAddresses](int x, int y, bool keyboard_tooltip,
+              [iconName, workspaceAndTitles, iconAddresses, showThumbnails](int x, int y, bool keyboard_tooltip,
                                        const Glib::RefPtr<Gtk::Tooltip>& tooltip_widget) -> bool {
                 // Create tooltip content box
                 auto* vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
@@ -1823,26 +1825,28 @@ void FancyWorkspaces::applyProjectCollapsing() {
                   const auto& addr = iconAddresses[i];
                   const auto& [wsName, title] = workspaceAndTitles[i];
                   
-                  // Try to load thumbnail
-                  auto thumbnail_path = cache.getThumbnailPath(addr);
-                  if (thumbnail_path.has_value()) {
-                    try {
-                      auto pixbuf = Gdk::Pixbuf::create_from_file(thumbnail_path.value());
-                      // Scale thumbnail if needed (max 256x256)
-                      int width = pixbuf->get_width();
-                      int height = pixbuf->get_height();
-                      if (width > 256 || height > 256) {
-                        double scale = std::min(256.0 / width, 256.0 / height);
-                        width = static_cast<int>(width * scale);
-                        height = static_cast<int>(height * scale);
-                        pixbuf = pixbuf->scale_simple(width, height, Gdk::INTERP_BILINEAR);
+                  // Try to load thumbnail only if enabled
+                  if (showThumbnails) {
+                    auto thumbnail_path = cache.getThumbnailPath(addr);
+                    if (thumbnail_path.has_value()) {
+                      try {
+                        auto pixbuf = Gdk::Pixbuf::create_from_file(thumbnail_path.value());
+                        // Scale thumbnail if needed (max 256x256)
+                        int width = pixbuf->get_width();
+                        int height = pixbuf->get_height();
+                        if (width > 256 || height > 256) {
+                          double scale = std::min(256.0 / width, 256.0 / height);
+                          width = static_cast<int>(width * scale);
+                          height = static_cast<int>(height * scale);
+                          pixbuf = pixbuf->scale_simple(width, height, Gdk::INTERP_BILINEAR);
+                        }
+                        
+                        auto* thumb_img = Gtk::manage(new Gtk::Image(pixbuf));
+                        vbox->pack_start(*thumb_img, false, false);
+                      } catch (const Glib::Error& e) {
+                        spdlog::debug("[ICON_TOOLTIP] Failed to load thumbnail for {}: {}", addr,
+                                      e.what().c_str());
                       }
-                      
-                      auto* thumb_img = Gtk::manage(new Gtk::Image(pixbuf));
-                      vbox->pack_start(*thumb_img, false, false);
-                    } catch (const Glib::Error& e) {
-                      spdlog::debug("[ICON_TOOLTIP] Failed to load thumbnail for {}: {}", addr,
-                                    e.what().c_str());
                     }
                   }
                   
@@ -2108,7 +2112,7 @@ void FancyWorkspaces::executeHook(const std::string& command, const std::string&
 }
 
 void FancyWorkspaces::captureThumbnailsForWorkspace(const std::string& workspaceName) {
-  if (!m_thumbnailCache.isAvailable()) {
+  if (!m_showThumbnails || !m_thumbnailCache.isAvailable()) {
     return;
   }
   
